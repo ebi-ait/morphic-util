@@ -31,10 +31,10 @@ S3_REGION = 'us-east-1'
 LOCAL_STATE_FILE = USER_HOME + '/.hca-util'
 
 # Cognito and IAM
-COGNITO_MORPHIC_UTIL_ADMIN = 'morphic-admin'
-COGNITO_CLIENT_ID = '6poq2i04qt3pj5rkpg51patcrk'
-COGNITO_IDENTITY_POOL_ID = 'eu-west-2:87ba188b-51fc-42e0-9172-a1a01cda8ed0'
-COGNITO_USER_POOL_ID = 'eu-west-2_2BpGQDRSU'
+COGNITO_MORPHIC_UTIL_ADMIN = 'morphic-dev-admin'
+COGNITO_CLIENT_ID = '178j951qnfuheicm2m5rqqvg6q'
+COGNITO_IDENTITY_POOL_ID = 'eu-west-2:d6531e9c-020d-4ee8-bf3b-255393c500e9'
+COGNITO_USER_POOL_ID = 'eu-west-2_b4EyaLNCM'
 IAM_USER = 'morphic-admin'
 
 AWS_SECRET_NAME_AK_BUCKET = 'AK-bucket'

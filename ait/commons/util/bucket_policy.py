@@ -1,4 +1,4 @@
-from ait.commons.util.settings import AWS_ACCOUNT, IAM_USER
+from ait.commons.util.settings import IAM_USER
 
 """
 User groups:
@@ -50,6 +50,7 @@ Possible combinations are 'u', 'ud', 'ux', 'udx'
 ALLOWED_PERMS = ['u', 'ud', 'ux', 'udx']
 DEFAULT_PERMS = 'ux'
 
+
 # constraints - in bucket policy
 # ux       denyDelete                  -> u
 # ux       allowDownload               -> udx
@@ -57,18 +58,19 @@ DEFAULT_PERMS = 'ux'
 
 def allowDownloadStmt():
     return {
-    "Sid": "AllowDownload",
-    "Effect": "Allow",
-    "Action": "s3:GetObject",
-    "Resource": [],
-    "Principal": { "AWS": [f"arn:aws:iam::{AWS_ACCOUNT}:user/{IAM_USER}"]}
-}
+        "Sid": "AllowDownload",
+        "Effect": "Allow",
+        "Action": "s3:GetObject",
+        "Resource": [],
+        "Principal": {"AWS": [f"arn:aws:iam::{AWS_ACCOUNT}:user/{IAM_USER}"]}
+    }
+
 
 def denyDeleteStmt():
     return {
-    "Sid": "DenyDelete",
-    "Effect": "Deny",
-    "Action": "s3:DeleteObject",
-    "Resource": [],
-    "Principal": { "AWS": [f"arn:aws:iam::{AWS_ACCOUNT}:user/{IAM_USER}"]}
-}
+        "Sid": "DenyDelete",
+        "Effect": "Deny",
+        "Action": "s3:DeleteObject",
+        "Resource": [],
+        "Principal": {"AWS": [f"arn:aws:iam::{AWS_ACCOUNT}:user/{IAM_USER}"]}
+    }

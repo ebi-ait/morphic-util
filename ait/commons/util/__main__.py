@@ -79,6 +79,10 @@ def parse_args(args):
     parser_config.add_argument('PASSWORD', help='AWS Cognito password', nargs='?')
     parser_config.add_argument('--bucket', help='use BUCKET instead of default bucket')
 
+    parser_config = cmd_parser.add_parser('submit', help='submit your metadata')
+    parser_config.add_argument('--type', help='data type you are submitting, e.g. study, dataset')
+    parser_config.add_argument('--file', help='your metadata')
+
     parser_create = cmd_parser.add_parser('create', help='create an upload area (authorised users only)')
     parser_create.add_argument('NAME', help='name for the new area', type=valid_project_name)
     parser_create.add_argument('DPC', help='center name of the submitter', type=valid_project_name)

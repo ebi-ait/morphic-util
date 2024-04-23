@@ -15,7 +15,7 @@ class CmdSelect:
     def run(self):
         try:
             if self.args.AREA:
-                key = self.args.AREA if self.args.AREA.endswith('/') else f'{self.args.AREA}/'
+                key = self.args.AREA
 
                 if self.aws.obj_exists(key):
                     set_selected_area(key)

@@ -10,6 +10,7 @@ from ait.commons.util.command.delete import CmdDelete
 from ait.commons.util.command.download import CmdDownload
 from ait.commons.util.command.list import CmdList
 from ait.commons.util.command.select import CmdSelect
+from ait.commons.util.command.submit import CmdSubmit
 from ait.commons.util.command.sync import CmdSync
 from ait.commons.util.command.upload import CmdUpload
 from ait.commons.util.local_state import get_bucket, set_attr, get_attr
@@ -35,6 +36,10 @@ class Cmd:
 
         if args.command == 'config':
             success, msg = CmdConfig(args).run()
+            print(msg)
+
+        elif args.command == 'submit':
+            success, msg = CmdSubmit(args).run()
             print(msg)
 
         else:

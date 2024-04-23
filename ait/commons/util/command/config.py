@@ -15,22 +15,25 @@ class CmdConfig:
 
     def run(self):
 
+        global valid_user
+
         try:
             profile = self.args.profile if self.args.profile else DEFAULT_PROFILE
+            aws_cognito_authenticator = AwsCognitoAuthenticator(self)
 
             if self.args.bucket:
                 set_bucket(self.args.bucket)
 
             if self.args.USERNAME and self.args.PASSWORD:
-                aws_cognito_authenticator = AwsCognitoAuthenticator(self)
+                valid_user = aws_cognito_authenticator.is_registered_user(profile, self.args.USERNAME,
+                                                                          self.args.PASSWORD)
+            else:
+                print("No credentials provided!")
 
-                valid_user = aws_cognito_authenticator.validate_cognito_identity(profile, self.args.USERNAME,
-                                                                                 self.args.PASSWORD)
-
-                # check if valid user
-                if valid_user:
-                    return True, 'Valid credentials'
-                else:
-                    return False, 'Invalid credentials'
+            # check if valid user
+            if valid_user:
+                return True, 'Valid credentials'
+            else:
+                return False, 'Invalid credentials'
         except Exception as e:
             return False, format_err(e, 'config')

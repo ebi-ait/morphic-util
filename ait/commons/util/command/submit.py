@@ -49,21 +49,29 @@ class CmdSubmit:
 
             dataset_id = get_id_from_url(link_dataset_to_submission_envelope_response)
 
-            # Check if both study and dataset IDs are available
+            # Check if dataset ID is available
             if dataset_id is not None:
+                # Check if user has passed study to link, else prompt
+                if self.args.study is not None:
+                    study_id = self.args.study
+
+                    self.link_dataset_study(dataset_id, study_id)
                 # Prompt user to link dataset to study
-                link_to_study = input("Do you want to link this dataset to a study? (yes/no): ").lower()
+                else:
+                    link_to_study = input("Do you want to link this dataset to a study? (yes/no): ").lower()
 
-                if link_to_study == 'yes':
-                    study_id = input("Input study id: ").lower()
-                    print("Linking dataset " + dataset_id + " to study " + study_id)
-                    # Perform the linking operation here
-
-                    self.put(f"{self.base_url}/studies/{study_id}/datasets/{dataset_id}", None)
-                    print("Dataset linked successfully to study: " + study_id)
+                    if link_to_study == 'yes':
+                        study_id = input("Input study id: ").lower()
+                        self.link_dataset_study(dataset_id, study_id)
             else:
                 print("Dataset created successfully.")
             return True, dataset_id
+
+    def link_dataset_study(self, dataset_id, study_id):
+        print("Linking dataset " + dataset_id + " to study " + study_id)
+        # Perform the linking operation here
+        self.put(f"{self.base_url}/studies/{study_id}/datasets/{dataset_id}", None)
+        print("Dataset linked successfully to study: " + study_id)
 
     def post(self, url, data_type_in_hal_link):
         # Read content of the file
@@ -71,7 +79,7 @@ class CmdSubmit:
             with open(self.args.file, 'r') as file:
                 self.data = json.load(file)
         else:
-            self.data = None
+            self.data = {}
 
         headers = {
             'Content-Type': 'application/json',

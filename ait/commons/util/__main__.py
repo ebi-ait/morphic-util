@@ -82,6 +82,7 @@ def parse_args(args):
     parser_config = cmd_parser.add_parser('submit', help='submit your metadata')
     parser_config.add_argument('--type', help='data type you are submitting, e.g. study, dataset')
     parser_config.add_argument('--file', help='your metadata')
+    parser_config.add_argument('--study', help='your study reference')
 
     parser_create = cmd_parser.add_parser('create', help='create an upload area (authorised users only)')
     parser_create.add_argument('NAME', help='name for the new area', type=valid_project_name)

@@ -37,9 +37,9 @@ class CmdList:
 
             if not selected_area:
                 return False, 'No area selected'
-            
+
             try:
-                selected_area += '' if selected_area.endswith('/') else '/'
+                # selected_area += '' if selected_area.endswith('/') else '/'
                 n, p = self.get_name_and_perms(selected_area)
                 self.print_area(selected_area, dict(name=n, perms=p))
 
@@ -99,7 +99,7 @@ class CmdList:
         contents = []
 
         s3_resource = self.aws.common_session.resource('s3')
-        bucket = s3_resource.Bucket(self.aws.bucket_name)
+        bucket = s3_resource.Bucket(selected_area)
 
         for obj in bucket.objects.filter(Prefix=selected_area):
             k = obj.key

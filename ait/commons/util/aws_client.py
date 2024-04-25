@@ -1,6 +1,7 @@
 import json
 
 import boto3
+import botocore
 
 from ait.commons.util.aws_cognito_authenticator import AwsCognitoAuthenticator
 from ait.commons.util.settings import AWS_SECRET_NAME_AK_BUCKET, AWS_SECRET_NAME_SK_BUCKET, \
@@ -86,7 +87,7 @@ class Aws:
     def is_valid_user(self):
         return self.is_user
 
-    def obj_exists(self, key):
+    def s3_bucket_exists(self, key):
         """
         Returns True if the bucket exists, else False.
         """
@@ -99,3 +100,23 @@ class Aws:
         except client.exceptions.NoSuchBucket as e:
             print(f"The bucket '{key}' does not exist. Reason: {e}")
             return False
+
+    def data_file_exists(self, bucket_name, key):
+        """
+        Check if an object exists in the specified S3 bucket.
+
+        Parameters:
+        - bucket_name (str): The name of the S3 bucket.
+        - key (str): The key of the object in the bucket.
+
+        Returns:
+        - bool: True if the object exists, False otherwise.
+        """
+        client = self.common_session.client('s3')
+
+        try:
+            client.head_object(Bucket=bucket_name, Key=key)
+            return True
+        except client.exceptions.ClientError:
+            return False
+

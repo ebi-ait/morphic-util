@@ -24,30 +24,13 @@ class CmdSubmit:
         submission_envelope_create_url = f"{self.base_url}/submissionEnvelopes/updateSubmissions"
 
         if self.type == 'study':
-            study_create_url = self.post(submission_envelope_create_url, 'studies')
-
-            submission_envelope_id = get_id_from_url(study_create_url)
-
-            study_create_response = self.post(study_create_url, 'submissionEnvelopes')
-            link_study_to_submission_envelope_response = self.put(study_create_response + '/' + submission_envelope_id,
-                                                                  'self')
-
-            study_id = get_id_from_url(link_study_to_submission_envelope_response)
-
-            print("Study created successfully: " + study_id)
+            study_id = self.create_study(submission_envelope_create_url)
 
             return True, study_id
         elif self.type == 'dataset':
-            dataset_create_url = self.post(submission_envelope_create_url, 'datasets')
+            dataset_id = self.create_dataset(submission_envelope_create_url)
 
-            submission_envelope_id = get_id_from_url(dataset_create_url)
-
-            dataset_create_response = self.post(dataset_create_url, 'submissionEnvelopes')
-            link_dataset_to_submission_envelope_response = self.put(
-                dataset_create_response + '/' + submission_envelope_id,
-                'self')
-
-            dataset_id = get_id_from_url(link_dataset_to_submission_envelope_response)
+            print("Dataset created successfully: " + dataset_id)
 
             # Check if dataset ID is available
             if dataset_id is not None:
@@ -63,9 +46,30 @@ class CmdSubmit:
                     if link_to_study == 'yes':
                         study_id = input("Input study id: ").lower()
                         self.link_dataset_study(dataset_id, study_id)
+                return True, dataset_id
             else:
-                print("Dataset created successfully.")
-            return True, dataset_id
+                print("Unsupported type")
+            return False, "Unsupported type"
+
+    def create_dataset(self, submission_envelope_create_url):
+        dataset_create_url = self.post(submission_envelope_create_url, 'datasets')
+        submission_envelope_id = get_id_from_url(dataset_create_url)
+        dataset_create_response = self.post(dataset_create_url, 'submissionEnvelopes')
+        link_dataset_to_submission_envelope_response = self.put(
+            dataset_create_response + '/' + submission_envelope_id,
+            'self')
+        dataset_id = get_id_from_url(link_dataset_to_submission_envelope_response)
+        return dataset_id
+
+    def create_study(self, submission_envelope_create_url):
+        study_create_url = self.post(submission_envelope_create_url, 'studies')
+        submission_envelope_id = get_id_from_url(study_create_url)
+        study_create_response = self.post(study_create_url, 'submissionEnvelopes')
+        link_study_to_submission_envelope_response = self.put(study_create_response + '/' + submission_envelope_id,
+                                                              'self')
+        study_id = get_id_from_url(link_study_to_submission_envelope_response)
+        print("Study created successfully: " + study_id)
+        return study_id
 
     def link_dataset_study(self, dataset_id, study_id):
         print("Linking dataset " + dataset_id + " to study " + study_id)

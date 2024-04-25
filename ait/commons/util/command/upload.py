@@ -20,12 +20,12 @@ class CmdUpload:
         self.args = args
         self.files = []
 
-    def upload_file(self, data_file, key):
+    def upload_file(self, selected_area, data_file, destination_file):
 
         file_size = os.path.getsize(data_file)
 
-        if not self.args.o and self.aws.obj_exists(key):
-            print(f"{data_file} already exists. Use -o to overwrite.")
+        if not self.args.o and self.aws.data_file_exists(selected_area, destination_file):
+            print(f"{destination_file} already exists. Use -o to overwrite.")
 
         elif file_size == 0:
             print(f"{data_file} is an empty file")
@@ -41,26 +41,27 @@ class CmdUpload:
                 content_type = file_type.mime
             content_type += '; dcp-type=data'
 
-            s3.Bucket(self.aws.bucket_name).upload_file(Filename=data_file,
-                                                        Key=key,
-                                                        Callback=ProgressBar(target=data_file, total=file_size),
-                                                        ExtraArgs={'ContentType': content_type}
-                                                        )
+            s3.Bucket(selected_area).upload_file(Filename=data_file,
+                                                 Key=destination_file,
+                                                 Callback=ProgressBar(target=data_file, total=file_size),
+                                                 ExtraArgs={'ContentType': content_type}
+                                                 )
 
     def upload_files(self, data_files, prefix):
+        selected_area = prefix
 
         with ThreadPoolExecutor() as executor:
             futures = {
-                executor.submit(self.upload_file, data_file,
-                                f"{prefix}{os.path.basename(data_file)}"): data_file
+                executor.submit(self.upload_file, selected_area, data_file,
+                                os.path.basename(data_file)): data_file
                 for data_file in data_files
             }
 
             # collect each finished job
             success = True
             for future in concurrent.futures.as_completed(futures):
+                data_file = futures[future]  # Get the associated data_file
                 try:
-                    data_file = futures[future]
                     future.result()  # read the result of the future object
                 except Exception as ex:
                     print(f"Exception raised for {data_file}: ", ex)

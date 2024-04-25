@@ -8,6 +8,7 @@ from ait.commons.util.settings import DEBUG_MODE, MAX_LEN_PROJECT_NAME
 
 INGEST_UPLOAD_AREA_PREFIX = 's3://org-hca-data-archive-upload-'
 
+
 def gen_uuid():
     return str(uuid.uuid4())
 

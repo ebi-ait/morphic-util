@@ -17,7 +17,7 @@ class CmdSelect:
             if self.args.AREA:
                 key = self.args.AREA
 
-                if self.aws.obj_exists(key):
+                if self.aws.s3_bucket_exists(key):
                     set_selected_area(key)
                     return True, f'Selected upload area is {key}'
                 else:

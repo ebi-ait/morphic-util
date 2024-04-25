@@ -12,7 +12,7 @@ def get_id_from_url(url):
 
 
 class CmdSubmit:
-    base_url = 'http://localhost:8080'
+    base_url = 'https://api.ingest.dev.archive.morphic.bio/'
 
     def __init__(self, args):
         self.args = args

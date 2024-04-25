@@ -1,9 +1,10 @@
 from pathlib import Path
 
 NAME = 'morphic-util'
-VERSION = '0.0.9'
+VERSION = '0.0.10'
 DESC = 'CLI tool for uploading data to Morphic AWS S3 bucket'
 AUTHOR = 'morphic-bio-dev'
+AUTHOR_EMAIL = 'dgupta@ebi.ac.uk'
 
 # when true, displays exception details; otherwise user-friendly error message
 DEBUG_MODE = False

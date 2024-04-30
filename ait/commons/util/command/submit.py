@@ -47,9 +47,9 @@ class CmdSubmit:
                         study_id = input("Input study id: ").lower()
                         self.link_dataset_study(dataset_id, study_id)
                 return True, dataset_id
-            else:
-                print("Unsupported type")
-            return False, "Unsupported type"
+        else:
+            print("Unsupported type")
+        return False, "Unsupported type"
 
     def create_dataset(self, submission_envelope_create_url):
         dataset_create_url = self.post(submission_envelope_create_url, 'datasets')

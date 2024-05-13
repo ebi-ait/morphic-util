@@ -5,9 +5,11 @@ from ait.commons.util.local_state import get_selected_area
 def print_area(k, area):
     print(k, end=' ')
     p = ''
+
     if 'perms' in area:
         p = area.get('perms') or ''
     print(p.ljust(3), end=' ')
+
     if 'name' in area:
         n = area.get('name')
         print(f'{n}' if n else '', end=' ')
@@ -27,41 +29,36 @@ class CmdList:
         self.s3_cli = self.aws.common_session.client('s3')
 
     def run(self):
-        selected_area = get_selected_area()
+        selected_area = get_selected_area()  # select area is a S3 bucket
 
         if not selected_area:
             return False, 'No area selected'
 
         try:
-            # selected_area += '' if selected_area.endswith('/') else '/'
-            folder_count = 0
-            for area in self.list_bucket_areas(selected_area):
-                k = area["key"]
-                print_area(k, area)
-                folder_count += 1
-            print_count(folder_count)
+            self.list_bucket_contents(selected_area)
+            # print_count(folder_count + files_count)
             return True, None
 
         except Exception as e:
             return False, format_err(e, 'list')
 
-    def list_bucket_areas(self, selected_area):
-        areas = []
-        result = self.s3_cli.list_objects_v2(Bucket=selected_area, Delimiter='/')
+    def list_bucket_contents(self, selected_area, prefix=''):
+        result = self.s3_cli.list_objects_v2(Bucket=selected_area, Delimiter='/', Prefix=prefix)
 
         # Folders
         dirs = result.get('CommonPrefixes', [])
+
         for d in dirs:
             k = d.get('Prefix')
-            areas.append({'key': k})
+            print_area(k, {'key': k, 'perms': 'dir'})
+            self.list_bucket_contents(selected_area, prefix=k)
 
         # Files
         files = result.get('Contents', [])
+
         for f in files:
             k = f.get('Key')
-            areas.append({'key': k})
-
-        return areas
+            print_area(k, {'key': k, 'perms': 'file'})
 
 
 def print_count(count):

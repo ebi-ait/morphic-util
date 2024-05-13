@@ -15,7 +15,7 @@ def static_bucket_name():
 class Aws:
 
     def __init__(self, user_profile):
-        self.is_user = False  # not admin
+        self.is_user = True  # not admin
         self.user_dir_list = None
         self.center_name = None
         self.secret_key = None
@@ -55,7 +55,8 @@ class Aws:
 
         if secret_manager_client is None:
             print(
-                'Failure while re-establishing Amazon Web Services session, report this error to the MorPhiC DRACC admin')
+                'Failure while re-establishing Amazon Web Services session, report this error to the MorPhiC DRACC '
+                'admin')
             raise Exception
         else:
             self.is_user = aws_cognito_authenticator.is_user
@@ -119,4 +120,3 @@ class Aws:
             return True
         except client.exceptions.ClientError:
             return False
-

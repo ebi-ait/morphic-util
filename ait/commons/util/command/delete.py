@@ -34,7 +34,8 @@ class CmdDelete:
                 if confirm.lower() == 'y':
                     print('Deleting...')
 
-                    deleted_keys = self.delete_upload_area(selected_area, incl_selected_area=False)
+                    deleted_keys = self.delete_all_files_from_s3_bucket(selected_area, incl_selected_area=False)
+
                     for k in deleted_keys:
                         print(k)
 
@@ -42,6 +43,7 @@ class CmdDelete:
 
             if self.args.PATH:  # list of files and dirs to delete
                 print('Deleting...')
+
                 for p in self.args.PATH:
                     # you may have perm x but not d (to load or even do a head object)
                     # so use obj_exists
@@ -52,7 +54,7 @@ class CmdDelete:
                     if keys:
                         for k in keys:
                             try:
-                                self.delete_s3_object(selected_area, k)
+                                self.delete_singe_file_from_s3_bucket(selected_area, k)
                                 print(k + '  Done.')
                             except Exception as ex:
                                 if 'AccessDenied' in str(ex):
@@ -80,13 +82,13 @@ class CmdDelete:
 
         return keys
 
-    def delete_s3_object(self, selected_area, key):
+    def delete_singe_file_from_s3_bucket(self, selected_area, key):
         s3_resource = self.aws.common_session.resource('s3')
         s3_obj = s3_resource.ObjectSummary(selected_area, key)
         s3_obj.delete()
         return key
 
-    def delete_upload_area(self, selected_area, incl_selected_area=False):
+    def delete_all_files_from_s3_bucket(self, selected_area, incl_selected_area=False):
         s3_resource = self.aws.common_session.resource('s3')
         bucket = s3_resource.Bucket(selected_area)
         deleted_keys = []

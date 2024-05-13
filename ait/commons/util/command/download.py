@@ -30,7 +30,7 @@ class CmdDownload:
 
         try:
             s3_resource = self.aws.common_session.resource('s3')
-            bucket = s3_resource.Bucket(self.aws.bucket_name)
+            bucket = s3_resource.Bucket(selected_area)
 
             # choice 1
             all_files = self.args.a  # optional bool

@@ -12,7 +12,7 @@ class AwsCognitoAuthenticator:
 
     def __init__(self, args):
         self.args = args
-        self.is_user = False  # not admin
+        self.is_user = True  # not admin
         self.user_dir_list = None
         self.center_name = None  # custom attribute DPC
 

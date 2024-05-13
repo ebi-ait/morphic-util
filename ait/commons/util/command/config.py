@@ -21,6 +21,7 @@ class CmdConfig:
             profile = self.args.profile if self.args.profile else DEFAULT_PROFILE
             aws_cognito_authenticator = AwsCognitoAuthenticator(self)
 
+            # TODO: review the below bucket in args
             if self.args.bucket:
                 set_bucket(self.args.bucket)
 

@@ -5,7 +5,7 @@ import requests
 
 from ait.commons.util.aws_client import Aws, static_bucket_name
 from ait.commons.util.command.config import CmdConfig
-from ait.commons.util.command.create import CmdCreate
+from ait.commons.util.command.create import run
 from ait.commons.util.command.delete import CmdDelete
 from ait.commons.util.command.download import CmdDownload
 from ait.commons.util.command.list import CmdList
@@ -87,7 +87,7 @@ class Cmd:
 
     def execute(self, args):
         if args.command == 'create':
-            success, msg = CmdCreate(self.aws, args).run()
+            success, msg = run()
             self.exit(success, msg)
 
         elif args.command == 'select':

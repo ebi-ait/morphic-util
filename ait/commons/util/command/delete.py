@@ -54,7 +54,7 @@ class CmdDelete:
                     if keys:
                         for k in keys:
                             try:
-                                self.delete_singe_file_from_s3_bucket(selected_area, k)
+r                                self.delete_single_file_from_s3_bucket(selected_area, k)
                                 print(k + '  Done.')
                             except Exception as ex:
                                 if 'AccessDenied' in str(ex):
@@ -82,7 +82,7 @@ class CmdDelete:
 
         return keys
 
-    def delete_singe_file_from_s3_bucket(self, selected_area, key):
+    def delete_single_file_from_s3_bucket(self, selected_area, key):
         s3_resource = self.aws.common_session.resource('s3')
         s3_obj = s3_resource.ObjectSummary(selected_area, key)
         s3_obj.delete()

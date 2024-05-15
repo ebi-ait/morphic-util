@@ -1,5 +1,8 @@
+import csv
+
 import requests
 import json
+import pandas as pd
 from urllib.parse import urlparse
 
 from ait.commons.util.user_profile import get_profile
@@ -18,7 +21,6 @@ class CmdSubmit:
         self.args = args
         self.access_token = get_profile('morphic-util').access_token
         self.type = self.args.type
-        self.data = None
 
     def run(self):
         submission_envelope_create_url = f"{self.base_url}/submissionEnvelopes/updateSubmissions"
@@ -80,20 +82,45 @@ class CmdSubmit:
     def post(self, url, data_type_in_hal_link):
         # Read content of the file
         if self.args.file:
-            with open(self.args.file, 'r') as file:
-                self.data = json.load(file)
+            data = self.transform()
         else:
-            self.data = {}
+            data = {}
 
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.access_token}'
         }
-        response = requests.post(url, headers=headers, json=self.data)
+        response = requests.post(url, headers=headers, json=data)
         response_data = response.json()
         url = response_data['_links'][data_type_in_hal_link]['href']
 
         return url
+
+    def transform(self):
+        if self.args.file.endswith('.tsv'):
+            # Read TSV file and convert to JSON
+            json_data = []
+
+            with open(self.args.file, 'r', newline='') as file:
+                reader = csv.DictReader(file, delimiter='\t')
+                for row in reader:
+                    json_data.append(row)
+
+            # Ensure JSON data is properly formatted
+            json_data_formatted = {'content': json_data}
+
+            # Assign formatted JSON data to self.data
+            data = json_data_formatted
+        elif self.args.file.endswith('.csv'):
+            # Read CSV file and convert to JSON
+            df = pd.read_csv(self.args.file)
+            data = {'content': df.to_dict(orient='records')}
+        else:
+            # Read JSON file
+            with open(self.args.file, 'r') as file:
+                data = json.load(file)
+
+        return data
 
     def put(self, url, data_type_in_hal_link):
         headers = {

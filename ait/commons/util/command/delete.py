@@ -54,7 +54,7 @@ class CmdDelete:
                     if keys:
                         for k in keys:
                             try:
-r                                self.delete_single_file_from_s3_bucket(selected_area, k)
+                                self.delete_single_file_from_s3_bucket(selected_area, k)
                                 print(k + '  Done.')
                             except Exception as ex:
                                 if 'AccessDenied' in str(ex):

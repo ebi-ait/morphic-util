@@ -96,7 +96,7 @@ class CmdSubmit:
                 print("Cell line has differentiated cell lines, creating process to link them")
 
                 differentiation_process_entity_id = self.use_existing_envelope_and_submit_entity('process',
-                                                                                                 cell_line.to_dict(),
+                                                                                                 {},
                                                                                                  submission_envelope_id,
                                                                                                  access_token)
 
@@ -115,6 +115,33 @@ class CmdSubmit:
                     # Update the mapping dictionary
                     differentiated_biomaterial_to_entity_id_map[
                         differentiated_cell_line.biomaterial_id] = differentiated_entity_id
+
+                    if len(differentiated_cell_line.library_preparations) > 0:
+                        # Create differentiation process
+                        print("Differentiated cell line has library preparation biomaterials, creating process to "
+                              "link them")
+
+                        library_preparation_process_entity_id = self.use_existing_envelope_and_submit_entity('process',
+                                                                                                             cell_line.to_dict(),
+                                                                                                             submission_envelope_id,
+                                                                                                             access_token)
+
+                        # Create a dictionary to store biomaterial_id to entity_id mappings for library preparations
+                        library_preparation_biomaterial_to_entity_id_map = {}
+
+                        for library_preparation in differentiated_cell_line.library_preparations:
+                            print(
+                                f"Creating Library preparation Biomaterial: {library_preparation.biomaterial_id}")
+
+                            # Create library_prep biomaterial
+                            library_preparation_entity_id = self.use_existing_envelope_and_submit_entity('biomaterial',
+                                                                                                         library_preparation.to_dict(),
+                                                                                                         submission_envelope_id,
+                                                                                                         access_token)
+
+                            # Update the mapping dictionary
+                            library_preparation_biomaterial_to_entity_id_map[
+                                library_preparation.biomaterial_id] = library_preparation_entity_id
 
     def typed_submission(self, type, file, access_token):
         """

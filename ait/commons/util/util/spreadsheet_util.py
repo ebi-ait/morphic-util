@@ -1,5 +1,6 @@
 import pandas as pd
 import json
+import numpy as np
 
 
 class MissingMandatoryFieldError(Exception):
@@ -12,7 +13,7 @@ class MissingEntityError(Exception):
     """Custom exception raised when an expected entity is missing."""
 
     def __init__(self, missing_type, entity_type, missing_id):
-        super().__init__(f"Missing {missing_type} for {entity_type} and Id is {missing_id}")
+        super().__init__(f"Missing {missing_type} for {entity_type} and ID is {missing_id}")
         self.entity_type = entity_type
         self.missing_type = missing_type
         self.missing_id = missing_id
@@ -110,21 +111,27 @@ class LibraryPreparation:
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self):
+        # Replace NaN values with None
+        def convert_nan_to_none(obj):
+            if isinstance(obj, float) and np.isnan(obj):
+                return None
+            return obj
+
         return {
             "content": {
                 "biomaterial_id": self.biomaterial_id,
                 "protocol_id": self.protocol_id,
                 "dissociation_protocol_id": self.dissociation_protocol_id,
                 "differentiated_biomaterial_id": self.differentiated_biomaterial_id,
-                "average_fragment_size": self.average_fragment_size,
-                "input_amount_value": self.input_amount_value,
+                "average_fragment_size": convert_nan_to_none(self.average_fragment_size),
+                "input_amount_value": convert_nan_to_none(self.input_amount_value),
                 "input_amount_unit": self.input_amount_unit,
-                "final_yield_value": self.final_yield_value,
+                "final_yield_value": convert_nan_to_none(self.final_yield_value),
                 "final_yield_unit": self.final_yield_unit,
-                "concentration_value": self.concentration_value,
+                "concentration_value": convert_nan_to_none(self.concentration_value),
                 "concentration_unit": self.concentration_unit,
                 "pcr_cycles": self.pcr_cycles,
-                "pcr_cycles_for_sample_index": self.pcr_cycles_for_sample_index
+                "pcr_cycles_for_sample_index": convert_nan_to_none(self.pcr_cycles_for_sample_index)
             }
         }
 

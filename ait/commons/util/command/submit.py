@@ -3,7 +3,6 @@ import requests
 import json
 import pandas as pd
 from urllib.parse import urlparse
-
 from ait.commons.util.user_profile import get_profile
 
 
@@ -22,24 +21,6 @@ def get_id_from_url(url):
     return path_parts[2]
 
 
-def get_id(url):
-    """
-    Extracts and returns the ID from a URL.
-
-    Parameters:
-        url (str): The URL string.
-
-    Returns:
-        str: The extracted ID or None if an error occurs.
-    """
-    try:
-        id = url.split('/')[-1]
-        return id
-    except Exception as e:
-        print(f"Error encountered: {e}")
-        return None
-
-
 class CmdSubmit:
     """
     A class to handle submission of studies, datasets, and biomaterials to a server.
@@ -54,15 +35,18 @@ class CmdSubmit:
 
     Methods:
         run(): Executes the submission process based on the type.
-        create_dataset(): Creates a dataset and returns its ID.
-        create_biomaterial(): Creates a biomaterial and returns its ID.
-        create_study(): Creates a study and returns its ID.
-        link_dataset_study(dataset_id, study_id): Links a dataset to a study.
-        link_biomaterial_dataset(biomaterial_id, dataset_id): Links a biomaterial to a dataset.
-        get_id(url): Extracts and returns the ID from a URL.
-        post(url, data_type_in_hal_link): Sends a POST request to the specified URL.
-        transform(): Transforms the input file to a JSON object.
-        put(url): Sends a PUT request to the specified URL.
+        multi_type_submission(cell_lines, submission_envelope_id, access_token): Submits multiple cell lines.
+        typed_submission(type, file, access_token): Submits a single entity based on its type.
+        create_new_envelope_and_submit_entity(input_entity_type, data, access_token): Creates and submits a new entity.
+        use_existing_envelope_and_submit_entity(input_entity_type, data, submission_envelope_id, access_token): Submits an entity using an existing envelope.
+        link_dataset_to_study(dataset_id, study_id, access_token): Links a dataset to a study.
+        link_biomaterial_to_dataset(biomaterial_id, dataset_id, access_token): Links a biomaterial to a dataset.
+        link_biomaterial_to_process(biomaterial_id, process_id, access_token): Links a biomaterial to a process.
+        post_to_provider_api(url, data_type_in_hal_link, data, access_token): Sends a POST request to the provider API.
+        create_new_submission_envelope(url, access_token): Creates a new submission envelope.
+        perform_hal_linkage(url, input_id, link_this, link_to, access_token): Performs HAL linkage.
+        transform(file): Transforms the input file to a JSON object.
+        put_to_provider_api(url, access_token): Sends a PUT request to the provider API.
     """
     base_url = 'http://localhost:8080'
     submission_envelope_create_url = f"{base_url}/submissionEnvelopes/updateSubmissions"
@@ -77,7 +61,8 @@ class CmdSubmit:
         """
         self.args = args
         self.access_token = get_profile('morphic-util').access_token
-        self.type = self.args.type
+        self.type = getattr(self.args, 'type', None)
+        self.file = getattr(self.args, 'file', None)
 
     def run(self):
         """
@@ -86,182 +71,272 @@ class CmdSubmit:
         Returns:
             tuple: A tuple containing a boolean indicating success and the ID of the created entity.
         """
-        if self.type in ['study', 'dataset', 'biomaterial', 'process']:
-            entity_id = self.create_entity(self.type)
+        return self.typed_submission(self.type, self.file, self.access_token)
+
+    def multi_type_submission(self, cell_lines, submission_envelope_id, access_token):
+        """
+        Submits multiple cell lines.
+
+        Parameters:
+            cell_lines (list): List of cell line objects to be submitted.
+            submission_envelope_id (str): ID of the submission envelope.
+            access_token (str): Access token for authorization.
+        """
+        for cell_line in cell_lines:
+            print(f"Creating Cell Line Biomaterial: {cell_line.biomaterial_id}")
+
+            # Create cell line biomaterial
+            cell_line_entity_id = self.use_existing_envelope_and_submit_entity('biomaterial',
+                                                                               cell_line.to_dict(),
+                                                                               submission_envelope_id,
+                                                                               access_token)
+
+            if len(cell_line.differentiated_cell_lines) > 0:
+                # Create differentiation process
+                print("Cell line has differentiated cell lines, creating process to link them")
+
+                differentiation_process_entity_id = self.use_existing_envelope_and_submit_entity('process',
+                                                                                                 cell_line.to_dict(),
+                                                                                                 submission_envelope_id,
+                                                                                                 access_token)
+
+                # Create a dictionary to store biomaterial_id to entity_id mappings for differentiated cell lines
+                differentiated_biomaterial_to_entity_id_map = {}
+
+                for differentiated_cell_line in cell_line.differentiated_cell_lines:
+                    print(f"Creating Differentiated Cell Line Biomaterial: {differentiated_cell_line.biomaterial_id}")
+
+                    # Create differentiated cell line biomaterial
+                    differentiated_entity_id = self.use_existing_envelope_and_submit_entity('biomaterial',
+                                                                                            differentiated_cell_line.to_dict(),
+                                                                                            submission_envelope_id,
+                                                                                            access_token)
+
+                    # Update the mapping dictionary
+                    differentiated_biomaterial_to_entity_id_map[
+                        differentiated_cell_line.biomaterial_id] = differentiated_entity_id
+
+    def typed_submission(self, type, file, access_token):
+        """
+        Submits a single entity based on its type.
+
+        Parameters:
+            type (str): The type of entity to be submitted ('study', 'dataset', 'biomaterial', 'process').
+            file (str): The file containing the data to be submitted.
+            access_token (str): Access token for authorization.
+
+        Returns:
+            tuple: A tuple containing a boolean indicating success and the ID of the created entity.
+        """
+        if type in ['study', 'dataset', 'biomaterial', 'process']:
+            if file is not None:
+                data = self.transform(file)
+            else:
+                data = {}
+
+            entity_id = self.create_new_envelope_and_submit_entity(type, data, access_token)
+
             if entity_id is not None:
-                if self.type == 'dataset':
+                if type == 'dataset':
                     if self.args.study is not None:
                         study_id = self.args.study
-                        self.link_dataset_study(entity_id, study_id)
+                        self.link_dataset_to_study(entity_id, study_id, access_token)
                     else:
                         link_to_study = input("Do you want to link this dataset to a study? (yes/no): ").lower()
                         if link_to_study == 'yes':
                             study_id = input("Input study id: ").lower()
-                            self.link_dataset_study(entity_id, study_id)
-                elif self.type == 'biomaterial':
+                            self.link_dataset_to_study(entity_id, study_id, access_token)
+
+                elif type == 'biomaterial':
                     if self.args.dataset is not None:
                         dataset_id = self.args.dataset
-                        self.link_biomaterial_dataset(entity_id, dataset_id)
+                        self.link_biomaterial_to_dataset(entity_id, dataset_id, access_token)
                     else:
                         link_to_dataset = input("Do you want to link this biomaterial to a dataset? (yes/no): ").lower()
                         if link_to_dataset == 'yes':
                             dataset_id = input("Input dataset id: ").lower()
-                            self.link_biomaterial_dataset(entity_id, dataset_id)
+                            self.link_biomaterial_to_dataset(entity_id, dataset_id, access_token)
 
                     # Linking biomaterial to process
                     if self.args.process is not None:
                         process_id = self.args.process
-                        self.link_biomaterial_process(entity_id, process_id)
+                        self.link_biomaterial_to_process(entity_id, process_id, access_token)
 
                 return True, entity_id
         else:
             print("Unsupported type")
         return False, "Unsupported type"
 
-    def create_entity(self, input_entity_type):
+    def create_new_envelope_and_submit_entity(self, input_entity_type, data, access_token):
         """
-        Creates an entity (study, dataset, biomaterial, or process) and returns its ID.
+        Creates and submits a new entity (study, dataset, biomaterial, or process) and returns its ID.
 
         Parameters:
             input_entity_type (str): The type of entity to create ('study', 'dataset', 'biomaterial', 'process').
+            data (dict): The data to be submitted.
+            access_token (str): Access token for authorization.
 
         Returns:
             str: The ID of the created entity.
         """
         if input_entity_type == 'study':
-            entity = 'studies'
+            halEntity = 'studies'
         elif input_entity_type == 'dataset':
-            entity = 'datasets'
+            halEntity = 'datasets'
         elif input_entity_type == 'biomaterial':
-            entity = 'biomaterials'
+            halEntity = 'biomaterials'
         elif input_entity_type == 'process':
-            entity = 'processes'
+            halEntity = 'processes'
 
-        entity_create_url_from_sub_env_hal_links = self.post(self.submission_envelope_create_url,
-                                                             entity)
-        entity_self_hal_link = self.post(entity_create_url_from_sub_env_hal_links, 'self')
+        entity_create_url_from_sub_env_hal_links = self.post_to_provider_api(self.submission_envelope_create_url,
+                                                                             halEntity, None, access_token)
+        entity_self_hal_link = self.post_to_provider_api(entity_create_url_from_sub_env_hal_links,
+                                                         'self', data, access_token)
         entity_id = get_id_from_url(entity_self_hal_link)
+
         print(f"{input_entity_type.capitalize()} created successfully: " + entity_id)
+
         return entity_id
 
-    def create_dataset(self):
+    def use_existing_envelope_and_submit_entity(self, input_entity_type, data, submission_envelope_id, access_token):
         """
-        Creates a dataset and returns its ID.
+        Submits an entity using an existing submission envelope and returns its ID.
+
+        Parameters:
+            input_entity_type (str): The type of entity to create ('study', 'dataset', 'biomaterial', 'process').
+            data (dict): The data to be submitted.
+            submission_envelope_id (str): ID of the submission envelope.
+            access_token (str): Access token for authorization.
 
         Returns:
-            str: The ID of the created dataset.
+            str: The ID of the created entity.
         """
-        dataset_create_url_from_sub_env_hal_links = self.post(self.submission_envelope_create_url, 'datasets')
-        dataset_self_hal_link = self.post(dataset_create_url_from_sub_env_hal_links, 'self')
-        dataset_id = get_id(dataset_self_hal_link)
-        print("Dataset created successfully: " + dataset_id)
-        return dataset_id
+        if input_entity_type == 'study':
+            halEntity = 'studies'
+        elif input_entity_type == 'dataset':
+            halEntity = 'datasets'
+        elif input_entity_type == 'biomaterial':
+            halEntity = 'biomaterials'
+        elif input_entity_type == 'process':
+            halEntity = 'processes'
 
-    def create_process(self):
-        """
-        Creates a process and returns its ID.
+        entity_create_url_from_sub_env_hal_links = (self.submission_envelope_base_url
+                                                    + "/" + submission_envelope_id
+                                                    + "/" + halEntity)
+        entity_self_hal_link = self.post_to_provider_api(entity_create_url_from_sub_env_hal_links,
+                                                         'self', data, access_token)
+        entity_id = get_id_from_url(entity_self_hal_link)
 
-        Returns:
-            str: The ID of the created process.
-        """
-        process_create_url_from_sub_env_hal_links = self.post(self.submission_envelope_create_url, 'processes')
-        process_self_hal_link = self.post(process_create_url_from_sub_env_hal_links, 'self')
-        process_id = get_id(process_self_hal_link)
-        print("Process created successfully: " + process_id)
-        return process_id
+        print(f"{input_entity_type.capitalize()} created successfully: " + entity_id)
 
-    def create_biomaterial(self):
-        """
-        Creates a biomaterial and returns its ID.
+        return entity_id
 
-        Returns:
-            str: The ID of the created biomaterial.
-        """
-        biomaterial_create_url_from_sub_env_hal_links = self.post(self.submission_envelope_create_url, 'biomaterials')
-        biomaterial_self_hal_link = self.post(biomaterial_create_url_from_sub_env_hal_links, 'self')
-        biomaterial_id = get_id(biomaterial_self_hal_link)
-        print("Biomaterial created successfully: " + biomaterial_id)
-        return biomaterial_id
-
-    def create_study(self):
-        """
-        Creates a study and returns its ID.
-
-        Returns:
-            str: The ID of the created study.
-        """
-        study_create_url_from_sub_env_hal_links = self.post(self.submission_envelope_create_url, 'studies')
-        study_self_hal_link = self.post(study_create_url_from_sub_env_hal_links, 'self')
-        study_id = get_id(study_self_hal_link)
-        print("Study created successfully: " + study_id)
-        return study_id
-
-    def link_dataset_study(self, dataset_id, study_id):
+    def link_dataset_to_study(self, dataset_id, study_id, access_token):
         """
         Links a dataset to a study.
 
         Parameters:
             dataset_id (str): The ID of the dataset.
             study_id (str): The ID of the study.
+            access_token (str): Access token for authorization.
         """
         print("Linking dataset " + dataset_id + " to study " + study_id)
-        self.put(f"{self.base_url}/studies/{study_id}/datasets/{dataset_id}")
+
+        self.put_to_provider_api(f"{self.base_url}/studies/{study_id}/datasets/{dataset_id}", access_token)
+
         print("Dataset linked successfully to study: " + study_id)
 
-    def link_biomaterial_dataset(self, biomaterial_id, dataset_id):
+    def link_biomaterial_to_dataset(self, biomaterial_id, dataset_id, access_token):
         """
         Links a biomaterial to a dataset.
 
         Parameters:
             biomaterial_id (str): The ID of the biomaterial.
             dataset_id (str): The ID of the dataset.
+            access_token (str): Access token for authorization.
         """
         print("Linking biomaterial " + biomaterial_id + " to dataset " + dataset_id)
-        self.put(f"{self.base_url}/datasets/{dataset_id}/biomaterials/{biomaterial_id}")
-        print("Biomaterial linked successfully to dataset: " + dataset_id)
 
-    def link_biomaterial_process(self, biomaterial_id, process_id):
+        self.put_to_provider_api(f"{self.base_url}/datasets/{dataset_id}/biomaterials/{biomaterial_id}", access_token)
+
+        print("Biosmaterial linked successfully to dataset: " + dataset_id)
+
+    def link_biomaterial_to_process(self, biomaterial_id, process_id, access_token):
+        """
+        Links a biomaterial to a process.
+
+        Parameters:
+            biomaterial_id (str): The ID of the biomaterial.
+            process_id (str): The ID of the process.
+            access_token (str): Access token for authorization.
+        """
         print("Linking biomaterial " + biomaterial_id + " to process " + process_id)
-        self.post_to_link(f"{self.base_url}/biomaterials/{biomaterial_id}/inputToProcesses",
-                          process_id, 'biomaterials', 'processes')
 
-    def post(self, url, data_type_in_hal_link):
+        self.perform_hal_linkage(f"{self.base_url}/biomaterials/{biomaterial_id}/inputToProcesses",
+                                 process_id, 'biomaterials', 'processes', access_token)
+
+    def post_to_provider_api(self, url, data_type_in_hal_link, data, access_token):
         """
         Sends a POST request to the specified URL.
 
         Parameters:
             url (str): The URL to send the request to.
             data_type_in_hal_link (str): The data type in the HAL link.
+            data (dict): The data to be sent in the POST request.
+            access_token (str): Access token for authorization.
 
         Returns:
             str: The URL from the response.
         """
-        if self.args.file:
-            data = self.transform()
-        else:
-            data = {}
-
         headers = {
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.access_token}'
+            'Authorization': f'Bearer {access_token}'
         }
 
         response = requests.post(url, headers=headers, json=data)
         response_data = response.json()
         url = response_data['_links'][data_type_in_hal_link]['href']
+
         return url
 
-    def post_to_link(self, url, input_id, link_this, link_to):
+    def create_new_submission_envelope(self, url, access_token):
         """
-        Sends a POST request to the specified URL.
+        Creates a new submission envelope.
 
         Parameters:
+            url (str): The URL to send the request to.
+            access_token (str): Access token for authorization.
 
         Returns:
+            dict: The response data.
+        """
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {access_token}'
+        }
+
+        response = requests.post(url, headers=headers, json={})
+        response_data = response.json()
+
+        return response_data
+
+    def perform_hal_linkage(self, url, input_id, link_this, link_to, access_token):
+        """
+        Performs HAL linkage.
+
+        Parameters:
+            url (str): The URL to send the request to.
+            input_id (str): The ID of the input entity.
+            link_this (str): The entity to link.
+            link_to (str): The entity to link to.
+            access_token (str): Access token for authorization.
+
+        Returns:
+            dict: The response data.
         """
         headers = {
             'Content-Type': 'text/uri-list',
-            'Authorization': f'Bearer {self.access_token}'
+            'Authorization': f'Bearer {access_token}'
         }
 
         response = requests.post(url, headers=headers,
@@ -269,43 +344,49 @@ class CmdSubmit:
 
         return response.json()
 
-    def transform(self):
+    def transform(self, file):
         """
         Transforms the input file to a JSON object.
+
+        Parameters:
+            file (str): The file path.
 
         Returns:
             dict: The JSON object.
         """
         if self.args.file.endswith('.tsv'):
             json_data = []
-            with open(self.args.file, 'r', newline='') as file:
+            with open(file, 'r', newline='') as file:
                 reader = csv.DictReader(file, delimiter='\t')
                 for row in reader:
                     json_data.append(row)
             json_data_formatted = {'content': json_data}
             data = json_data_formatted
-        elif self.args.file.endswith('.csv'):
-            df = pd.read_csv(self.args.file)
+        elif file.endswith('.csv'):
+            df = pd.read_csv(file)
             data = {'content': df.to_dict(orient='records')}
         else:
-            with open(self.args.file, 'r') as file:
+            with open(file, 'r') as file:
                 data = json.load(file)
         return data
 
-    def put(self, url):
+    def put_to_provider_api(self, url, access_token):
         """
         Sends a PUT request to the specified URL.
 
         Parameters:
             url (str): The URL to send the request to.
+            access_token (str): Access token for authorization.
 
         Returns:
             dict: The response data.
         """
         headers = {
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.access_token}'
+            'Authorization': f'Bearer {access_token}'
         }
+
         response = requests.put(url, headers=headers)
         response_data = response.json()
+
         return response_data

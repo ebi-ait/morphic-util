@@ -104,7 +104,8 @@ class CmdSubmitFile:
                                                                                             self.library_preparation_column_mapping)
             parser.merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
                                                                           library_preparations)
-            sequencing_files = parser.get_sequencing_files('Sequence file', self.sequencing_file_column_mapping)
+            sequencing_files, sequencing_files_df = parser.get_sequencing_files('Sequence file',
+                                                                                self.sequencing_file_column_mapping)
             parser.merge_library_preparation_sequencing_file(library_preparations, sequencing_files)
 
             # Print each CellLine object in CellLineMaster
@@ -117,11 +118,13 @@ class CmdSubmitFile:
             print("Submission envelope for this submission is: " + submission_envelope_id)
 
             # Perform the submission and get the updated dataframes
-            updated_cell_lines_df, updated_differentiated_cell_lines_df, updated_library_preparations_df = submission_instance.multi_type_submission(
+            (updated_cell_lines_df, updated_differentiated_cell_lines_df,
+             updated_library_preparations_df, updated_sequencing_files_df) = submission_instance.multi_type_submission(
                 cell_lines,
                 cell_lines_df,
                 differentiated_cell_lines_df,
                 library_preparations_df,
+                sequencing_files_df,
                 submission_envelope_id,
                 self.access_token
             )
@@ -131,3 +134,4 @@ class CmdSubmitFile:
                 updated_cell_lines_df.to_excel(writer, sheet_name='CellLines', index=False)
                 updated_differentiated_cell_lines_df.to_excel(writer, sheet_name='DifferentiatedCellLines', index=False)
                 updated_library_preparations_df.to_excel(writer, sheet_name='Library Preparations', index=False)
+                updated_sequencing_files_df.to_excel(writer, sheet_name='Sequence files', index=False)

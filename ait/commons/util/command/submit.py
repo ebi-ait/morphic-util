@@ -95,7 +95,8 @@ class CmdSubmit:
         return cell_line_entity_id
 
     def handle_differentiated_cell_lines(self, cell_line, cell_line_entity_id, differentiated_cell_lines_df,
-                                         library_preparations_df, submission_envelope_id, access_token):
+                                         library_preparations_df, sequencing_file_df, submission_envelope_id,
+                                         access_token):
         """
         Handles differentiated cell lines associated with a given cell line.
 
@@ -174,11 +175,12 @@ class CmdSubmit:
                 self.handle_library_preparations(differentiated_cell_line,
                                                  differentiated_entity_id,
                                                  library_preparations_df,
+                                                 sequencing_file_df,
                                                  submission_envelope_id,
                                                  access_token)
 
     def handle_library_preparations(self, differentiated_cell_line, differentiated_entity_id,
-                                    library_preparations_df, submission_envelope_id, access_token):
+                                    library_preparations_df, sequencing_file_df, submission_envelope_id, access_token):
         """
         Handles library preparations associated with a differentiated cell line.
 
@@ -255,10 +257,13 @@ class CmdSubmit:
 
                 self.handle_sequence_files(library_preparation,
                                            library_preparation_entity_id,
+                                           sequencing_file_df,
                                            submission_envelope_id,
                                            access_token)
 
-    def handle_sequence_files(self, library_preparation, library_preparation_entity_id, submission_envelope_id,
+    def handle_sequence_files(self, library_preparation, library_preparation_entity_id,
+                              sequencing_file_df,
+                              submission_envelope_id,
                               access_token):
         if len(library_preparation.sequencing_files) > 0:
             print("library preparation has sequencing files, creating process to link them")
@@ -267,6 +272,10 @@ class CmdSubmit:
             )
 
             sequencing_file_to_entity_id_map = {}
+            sequencing_file_entity_id_column_name = "sequencing_file_entity_id"
+
+            if sequencing_file_entity_id_column_name not in sequencing_file_df.columns:
+                sequencing_file_df[sequencing_file_entity_id_column_name] = np.nan
 
             for sequencing_file in library_preparation.sequencing_files:
                 print(f"Creating Sequencing file: "
@@ -302,12 +311,19 @@ class CmdSubmit:
                     sequencing_process_entity_id, 'processes', access_token
                 )
 
+                sequencing_file_df.loc[
+                    sequencing_file_df[
+                        'sequence_file.file_core.file_name'] == sequencing_file.file_name,
+                    sequencing_file_entity_id_column_name
+                ] = sequencing_file_entity_id
+
                 sequencing_file_to_entity_id_map[
                     sequencing_file.file_name] = sequencing_file_entity_id
 
     def multi_type_submission(self, cell_lines, cell_lines_df,
                               differentiated_cell_lines_df,
                               library_preparations_df,
+                              sequencing_file_df,
                               submission_envelope_id,
                               access_token):
         """
@@ -340,9 +356,10 @@ class CmdSubmit:
             ] = cell_line_entity_id
 
             self.handle_differentiated_cell_lines(cell_line, cell_line_entity_id, differentiated_cell_lines_df,
-                                                  library_preparations_df, submission_envelope_id, access_token)
+                                                  library_preparations_df, sequencing_file_df, submission_envelope_id,
+                                                  access_token)
 
-        return cell_lines_df, differentiated_cell_lines_df, library_preparations_df
+        return cell_lines_df, differentiated_cell_lines_df, library_preparations_df, sequencing_file_df
 
     def typed_submission(self, type, file, access_token):
         """

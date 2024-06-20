@@ -421,6 +421,7 @@ class SpreadsheetSubmitter:
 
         # Filter rows where biomaterial_id is not null
         df = df[df['library_preparation.biomaterial_core.biomaterial_id'].notna()]
+        # TODO: for all
         df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Filter column_mapping to include only keys that exist in df.columns
@@ -520,7 +521,7 @@ class SpreadsheetSubmitter:
             for _, row in df_filtered.iterrows()
         ]
 
-        return sequencing_files
+        return sequencing_files, df_filtered
 
     def get_cell_lines(self, sheet_name, column_mapping):
         """
@@ -692,5 +693,5 @@ class SpreadsheetSubmitter:
         list
             A list of SequencingFile objects parsed from the specified sheet.
         """
-        sequencing_files = self.parse_sequencing_files(sheet_name, column_mapping)
-        return sequencing_files
+        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, column_mapping)
+        return sequencing_files, df_filtered

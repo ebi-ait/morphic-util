@@ -137,6 +137,10 @@ class LibraryPreparation:
         }
 
 
+class EntityType:
+    FILE = 'FILE'
+
+
 class SequencingFile:
     def __init__(self, file_name, library_preparation_id, sequencing_protocol_id, read_index, run_id):
         self.file_name = file_name
@@ -144,20 +148,32 @@ class SequencingFile:
         self.sequencing_protocol_id = sequencing_protocol_id
         self.read_index = read_index
         self.run_id = run_id
+        self.entity_type = EntityType.FILE
+        self.content = {
+            "file_name": self.file_name,
+            "library_preparation_id": self.library_preparation_id,
+            "sequencing_protocol_id": self.sequencing_protocol_id,
+            "read_index": self.read_index,
+            "run_id": self.run_id
+        }
+        self.set_file_name(file_name)
+        self.init_file()
 
     def __repr__(self):
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self):
         return {
-            "content": {
-                "file_name": self.file_name,
-                "library_preparation_id": self.library_preparation_id,
-                "sequencing_protocol_id": self.sequencing_protocol_id,
-                "read_index": self.read_index,
-                "run_id": self.run_id
-            }
+            "content": self.content,
+            "fileName": self.file_name
         }
+
+    def set_file_name(self, file_name):
+        self.file_name = file_name
+
+    def init_file(self):
+        # Placeholder for any initialization logic required for the file
+        pass
 
 
 class SpreadsheetSubmitter:

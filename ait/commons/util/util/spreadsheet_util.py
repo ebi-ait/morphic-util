@@ -111,10 +111,11 @@ class LibraryPreparation:
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self):
-        # Replace NaN values with None
-        def convert_nan_to_none(obj):
-            if isinstance(obj, float) and np.isnan(obj):
-                return None
+        # Replace NaN values and out-of-range float values with None
+        def convert_to_valid_json_value(obj):
+            if isinstance(obj, float):
+                if np.isnan(obj) or not np.isfinite(obj):
+                    return None
             return obj
 
         return {
@@ -123,15 +124,15 @@ class LibraryPreparation:
                 "protocol_id": self.protocol_id,
                 "dissociation_protocol_id": self.dissociation_protocol_id,
                 "differentiated_biomaterial_id": self.differentiated_biomaterial_id,
-                "average_fragment_size": convert_nan_to_none(self.average_fragment_size),
-                "input_amount_value": convert_nan_to_none(self.input_amount_value),
+                "average_fragment_size": convert_to_valid_json_value(self.average_fragment_size),
+                "input_amount_value": convert_to_valid_json_value(self.input_amount_value),
                 "input_amount_unit": self.input_amount_unit,
-                "final_yield_value": convert_nan_to_none(self.final_yield_value),
+                "final_yield_value": convert_to_valid_json_value(self.final_yield_value),
                 "final_yield_unit": self.final_yield_unit,
-                "concentration_value": convert_nan_to_none(self.concentration_value),
+                "concentration_value": convert_to_valid_json_value(self.concentration_value),
                 "concentration_unit": self.concentration_unit,
                 "pcr_cycles": self.pcr_cycles,
-                "pcr_cycles_for_sample_index": convert_nan_to_none(self.pcr_cycles_for_sample_index)
+                "pcr_cycles_for_sample_index": convert_to_valid_json_value(self.pcr_cycles_for_sample_index)
             }
         }
 
@@ -244,8 +245,10 @@ class SpreadsheetSubmitter:
 
         Returns:
         --------
-        list
-            A list of CellLine objects parsed from the specified sheet.
+        tuple
+            A tuple containing:
+            - list of CellLine objects parsed from the specified sheet.
+            - pd.DataFrame with the parsed data.
         """
         df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl')
         df.columns = df.columns.str.strip()
@@ -280,6 +283,7 @@ class SpreadsheetSubmitter:
         df_filtered = df[mask]
 
         # Check for mandatory fields and create CellLine objects
+        # TODO: for all
         cell_lines = []
         for _, row in df_filtered.iterrows():
             biomaterial_id = row['cell_line.biomaterial_core.biomaterial_id']
@@ -307,7 +311,7 @@ class SpreadsheetSubmitter:
                 )
             )
 
-        return cell_lines
+        return cell_lines, df_filtered
 
     def parse_differentiated_cell_lines(self, sheet_name, column_mapping):
         """
@@ -372,7 +376,7 @@ class SpreadsheetSubmitter:
             for _, row in df_filtered.iterrows()
         ]
 
-        return differentiated_cell_lines
+        return differentiated_cell_lines, df_filtered
 
     def parse_library_preparations(self, sheet_name, column_mapping):
         """
@@ -401,6 +405,7 @@ class SpreadsheetSubmitter:
 
         # Filter rows where biomaterial_id is not null
         df = df[df['library_preparation.biomaterial_core.biomaterial_id'].notna()]
+        df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Filter column_mapping to include only keys that exist in df.columns
         columns_to_select = [col_mapping_val for col_mapping_key, col_mapping_val in column_mapping.items() if
@@ -443,7 +448,7 @@ class SpreadsheetSubmitter:
             for _, row in df_filtered.iterrows()
         ]
 
-        return library_preparations
+        return library_preparations, df_filtered
 
     def parse_sequencing_files(self, sheet_name, column_mapping):
         """
@@ -517,8 +522,8 @@ class SpreadsheetSubmitter:
         list
             A list of CellLine objects parsed from the specified sheet.
         """
-        cell_lines = self.parse_cell_lines(sheet_name, column_mapping)
-        return cell_lines
+        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name, column_mapping)
+        return cell_lines, cell_lines_df
 
     def get_differentiated_cell_lines(self, sheet_name, column_mapping):
         """
@@ -536,8 +541,9 @@ class SpreadsheetSubmitter:
         list
             A list of DifferentiatedCellLine objects parsed from the specified sheet.
         """
-        differentiated_cell_lines = self.parse_differentiated_cell_lines(sheet_name, column_mapping)
-        return differentiated_cell_lines
+        differentiated_cell_lines, differentiated_cell_lines_df = self.parse_differentiated_cell_lines(sheet_name,
+                                                                                                       column_mapping)
+        return differentiated_cell_lines, differentiated_cell_lines_df
 
     def merge_cell_line_and_differentiated_cell_line(self, cell_lines, differentiated_cell_lines):
         """
@@ -651,8 +657,8 @@ class SpreadsheetSubmitter:
         list
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
-        library_preparations = self.parse_library_preparations(sheet_name, column_mapping)
-        return library_preparations
+        library_preparations, df_filtered = self.parse_library_preparations(sheet_name, column_mapping)
+        return library_preparations, df_filtered
 
     def get_sequencing_files(self, sheet_name, column_mapping):
         """

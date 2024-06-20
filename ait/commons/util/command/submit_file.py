@@ -1,4 +1,6 @@
 # Import necessary modules/classes from ait.commons.util package
+import pandas as pd
+
 from ait.commons.util.command.submit import CmdSubmit, get_id_from_url
 from ait.commons.util.user_profile import get_profile
 from ait.commons.util.util.spreadsheet_util import SpreadsheetSubmitter
@@ -88,13 +90,18 @@ class CmdSubmitFile:
             # Initialize SpreadsheetParser with the provided file path
             parser = SpreadsheetSubmitter(self.file)
 
+            # print(parser.list_sheets())
+
             # Parse different sections of the spreadsheet using defined column mappings
-            cell_lines = parser.get_cell_lines('Cell line ', self.cellline_column_mapping)
-            differentiated_cell_lines = parser.get_differentiated_cell_lines('Differentiated cell line',
-                                                                             self.differentiated_cellline_column_mapping)
+            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line',
+                                                              self.cellline_column_mapping)
+
+            differentiated_cell_lines, differentiated_cell_lines_df = parser.get_differentiated_cell_lines(
+                'Differentiated cell line',
+                self.differentiated_cellline_column_mapping)
             parser.merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines)
-            library_preparations = parser.get_library_preparations('Library preparation',
-                                                                   self.library_preparation_column_mapping)
+            library_preparations, library_preparations_df = parser.get_library_preparations('Library preparation',
+                                                                                            self.library_preparation_column_mapping)
             parser.merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
                                                                           library_preparations)
             sequencing_files = parser.get_sequencing_files('Sequence file', self.sequencing_file_column_mapping)
@@ -109,4 +116,18 @@ class CmdSubmitFile:
 
             print("Submission envelope for this submission is: " + submission_envelope_id)
 
-            submission_instance.multi_type_submission(cell_lines, submission_envelope_id, self.access_token)
+            # Perform the submission and get the updated dataframes
+            updated_cell_lines_df, updated_differentiated_cell_lines_df, updated_library_preparations_df = submission_instance.multi_type_submission(
+                cell_lines,
+                cell_lines_df,
+                differentiated_cell_lines_df,
+                library_preparations_df,
+                submission_envelope_id,
+                self.access_token
+            )
+
+            # Save both dataframes to a single Excel file with multiple sheets
+            with pd.ExcelWriter("updated_cell_lines.xlsx") as writer:
+                updated_cell_lines_df.to_excel(writer, sheet_name='CellLines', index=False)
+                updated_differentiated_cell_lines_df.to_excel(writer, sheet_name='DifferentiatedCellLines', index=False)
+                updated_library_preparations_df.to_excel(writer, sheet_name='Library Preparations', index=False)

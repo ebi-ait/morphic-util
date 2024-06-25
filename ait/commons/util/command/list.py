@@ -60,6 +60,39 @@ class CmdList:
             k = f.get('Key')
             print_area(k, {'key': k, 'perms': 'file'})
 
+    def list_bucket_contents_and_return(self, selected_area, prefix=''):
+        """
+        Lists the contents of an S3 bucket and returns a list of file keys.
+
+        Parameters:
+        - selected_area: The S3 bucket name.
+        - prefix: The prefix to filter objects by (default is empty string, which lists all objects).
+
+        Returns:
+        - A list of file keys in the bucket.
+        """
+        file_keys = []
+
+        def _list_bucket_contents(bucket, prefix):
+            result = self.s3_cli.list_objects_v2(Bucket=bucket, Delimiter='/', Prefix=prefix)
+
+            # Folders
+            dirs = result.get('CommonPrefixes', [])
+            for d in dirs:
+                k = d.get('Prefix')
+                # print_area(k, {'key': k, 'perms': 'dir'})
+                _list_bucket_contents(bucket, prefix=k)
+
+            # Files
+            files = result.get('Contents', [])
+            for f in files:
+                k = f.get('Key')
+                # print_area(k, {'key': k, 'perms': 'file'})
+                file_keys.append(k)
+
+        _list_bucket_contents(selected_area, prefix)
+        return file_keys
+
 
 def print_count(count):
     if count == 0:

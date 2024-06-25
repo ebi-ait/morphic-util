@@ -1,66 +1,30 @@
 # Import necessary modules/classes from ait.commons.util package
+
 import pandas as pd
 
+from ait.commons.util.aws_client import Aws
+from ait.commons.util.command.list import CmdList
 from ait.commons.util.command.submit import CmdSubmit, get_id_from_url
 from ait.commons.util.user_profile import get_profile
 from ait.commons.util.util.spreadsheet_util import SpreadsheetSubmitter
 
 
 # Define a class for handling submission of a command file
+def validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, dataset):
+    for sequencing_file in sequencing_files:
+        match_found = False  # Flag to indicate if a match is found
+
+        for file_key in list_of_files_in_upload_area:
+            if sequencing_file.file_name == file_key:
+                match_found = True
+                break  # Exit the inner loop if a match is found
+
+        if not match_found:
+            raise Exception(f"No matching file found for sequencing file: {sequencing_file.file_name} in the "
+                            f"upload area for the dataset: {dataset}")
+
+
 class CmdSubmitFile:
-    # Column mappings for parsing different sections of the spreadsheet
-    cellline_column_mapping = {
-        "CELL LINE ID (Required)": "cell_line.biomaterial_core.biomaterial_id",
-        "CELL LINE DESCRIPTION": "cell_line.biomaterial_core.biomaterial_description",
-        "DERIVED FROM CELL LINE NAME (Required)": "cell_line.derived_cell_line_accession",
-        "CLONE ID": "cell_line.clone_id",
-        "GENE EXPRESSION ALTERATION PROTOCOL ID": "gene_expression_alteration_protocol.protocol_core.protocol_id",
-        "ZYGOSITY": "cell_line.zygosity",
-        "CELL LINE TYPE (Required)": "cell_line.type",
-        "Unnamed: 7": None,
-        "Unnamed: 8": None
-    }
-
-    differentiated_cellline_column_mapping = {
-        "DIFFERENTIATED CELL LINE ID (Required)": "differentiated_cell_line.biomaterial_core.biomaterial_id",
-        "DIFFERENTIATED CELL LINE DESCRIPTION": "differentiated_cell_line.biomaterial_core.biomaterial_description",
-        "INPUT CELL LINE ID (Required)": "cell_line.biomaterial_core.biomaterial_id",
-        "DIFFERENTIATION PROTOCOL ID (Required)": "differentiation_protocol.protocol_core.protocol_id",
-        "TIMEPOINT VALUE": "differentiated_cell_line.timepoint_value",
-        "TIMEPOINT UNIT": "differentiated_cell_line.timepoint_unit.text",
-        "TERMINALLY DIFFERENTIATED": "differentiated_cell_line.terminally_differentiated",
-        "FINAL LINEAGE STAGE": "differentiated_cell_line.terminally_differentiated",
-        "Model System": "cell_line.model_organ.text",
-        "MODEL SYSTEM": "cell_line.model_organ.text",
-        "Unnamed: 8": None
-    }
-
-    library_preparation_column_mapping = {
-        "LIBRARY PREPARATION ID (Required)": "library_preparation.biomaterial_core.biomaterial_id",
-        "LIBRARY PREPARATION PROTOCOL ID (Required)": "library_preparation_protocol.protocol_core.protocol_id",
-        "DISSOCIATION PROTOCOL ID (Required)": "dissociation_protocol.protocol_core.protocol_id",
-        "DIFFERENTIATED CELL LINE ID (Required)": "differentiated_cell_line.biomaterial_core.biomaterial_id",
-        "LIBRARY AVERAGE FRAGMENT SIZE": "library_preparation.average_fragment_size",
-        "LIBRARY INPUT AMOUNT VALUE": "library_preparation.input_amount_value",
-        "LIBRARY INPUT AMOUNT UNIT": "library_preparation.input_amount_unit",
-        "LIBRARY FINAL YIELD VALUE": "library_preparation.final_yield_value",
-        "LIBRARY FINAL YIELD UNIT": "library_preparation.final_yield_unit",
-        "LIBRARY CONCENTRATION VALUE": "library_preparation.concentration_value",
-        "LIBRARY CONCENTRATION UNIT": "library_preparation.concentration_unit",
-        "LIBRARY PCR CYCLES": "library_preparation.pcr_cycles",
-        "LIBRARY PCR CYCLES FOR SAMPLE INDEX": "library_preparation.pcr_cycles_for_sample_index",
-        "Unnamed: 14": None  # Adjust index based on your actual column count
-    }
-
-    sequencing_file_column_mapping = {
-        "FILE NAME (Required)": "sequence_file.file_core.file_name",
-        "INPUT LIBRARY PREPARATION ID (Required)": "library_preparation.biomaterial_core.biomaterial_id",
-        "SEQUENCING PROTOCOL ID (Required)": "sequencing_protocol.protocol_core.protocol_id",
-        "READ INDEX (Required)": "sequence_file.read_index",
-        "RUN ID": "sequence_file.run_id",
-        "Unnamed: 5": None  # Adjust index based on your actual column count
-    }
-
     base_url = 'http://localhost:8080'
     submission_envelope_create_url = f"{base_url}/submissionEnvelopes/updateSubmissions"
     submission_envelope_base_url = f"{base_url}/submissionEnvelopes"
@@ -74,38 +38,58 @@ class CmdSubmitFile:
         """
         self.args = args
         self.access_token = get_profile('morphic-util').access_token
+        self.user_profile = get_profile('morphic-util')
+        self.aws = Aws(self.user_profile)
 
         if hasattr(self.args, 'file') and self.args.file is not None:
             self.file = self.args.file
         else:
-            self.file = None
+            raise Exception("File is mandatory")
+
+        if hasattr(self.args, 'action') and self.args.action is not None:
+            self.action = self.args.action
+        else:
+            raise Exception("Submission action (ADD, MODIFY or DELETE) is mandatory")
+
+        if hasattr(self.args, 'dataset') and self.args.dataset is not None:
+            self.dataset = self.args.dataset
+        else:
+            raise Exception("Dataset is mandatory to be registered before submitting dataset metadata, "
+                            "We request you to submit your study using the submit option, register your"
+                            "dataset using the same option and link your dataset to your study"
+                            "before proceeding with this submission.")
 
     def run(self):
         """
         Execute the command file submission process.
         """
         submission_instance = CmdSubmit(self)
+        list_instance = CmdList(self.aws, self.args)
+
+        list_of_files_in_upload_area = (list_instance.
+                                        list_bucket_contents_and_return(self.dataset, ''))
+
+        print("Files in the upload area:")
+
+        for file_key in list_of_files_in_upload_area:
+            print(file_key)
 
         if self.file:
             # Initialize SpreadsheetParser with the provided file path
             parser = SpreadsheetSubmitter(self.file)
 
-            # print(parser.list_sheets())
-
             # Parse different sections of the spreadsheet using defined column mappings
-            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line',
-                                                              self.cellline_column_mapping)
-
+            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line')
             differentiated_cell_lines, differentiated_cell_lines_df = parser.get_differentiated_cell_lines(
-                'Differentiated cell line',
-                self.differentiated_cellline_column_mapping)
+                'Differentiated cell line')
             parser.merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines)
-            library_preparations, library_preparations_df = parser.get_library_preparations('Library preparation',
-                                                                                            self.library_preparation_column_mapping)
+            library_preparations, library_preparations_df = parser.get_library_preparations('Library preparation')
             parser.merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
                                                                           library_preparations)
-            sequencing_files, sequencing_files_df = parser.get_sequencing_files('Sequence file',
-                                                                                self.sequencing_file_column_mapping)
+            sequencing_files, sequencing_files_df = parser.get_sequencing_files('Sequence file')
+
+            validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
+
             parser.merge_library_preparation_sequencing_file(library_preparations, sequencing_files)
 
             # Print each CellLine object in CellLineMaster
@@ -118,20 +102,35 @@ class CmdSubmitFile:
             print("Submission envelope for this submission is: " + submission_envelope_id)
 
             # Perform the submission and get the updated dataframes
-            (updated_cell_lines_df, updated_differentiated_cell_lines_df,
-             updated_library_preparations_df, updated_sequencing_files_df) = submission_instance.multi_type_submission(
-                cell_lines,
-                cell_lines_df,
-                differentiated_cell_lines_df,
-                library_preparations_df,
-                sequencing_files_df,
-                submission_envelope_id,
-                self.access_token
-            )
+            try:
+                (updated_cell_lines_df, updated_differentiated_cell_lines_df,
+                 updated_library_preparations_df,
+                 updated_sequencing_files_df, message) = submission_instance.multi_type_submission(
+                    cell_lines,
+                    cell_lines_df,
+                    differentiated_cell_lines_df,
+                    library_preparations_df,
+                    sequencing_files_df,
+                    submission_envelope_id,
+                    self.access_token
+                )
 
-            # Save both dataframes to a single Excel file with multiple sheets
-            with pd.ExcelWriter("updated_cell_lines.xlsx") as writer:
-                updated_cell_lines_df.to_excel(writer, sheet_name='CellLines', index=False)
-                updated_differentiated_cell_lines_df.to_excel(writer, sheet_name='DifferentiatedCellLines', index=False)
-                updated_library_preparations_df.to_excel(writer, sheet_name='Library Preparations', index=False)
-                updated_sequencing_files_df.to_excel(writer, sheet_name='Sequence files', index=False)
+                # Save the updated dataframes to a single Excel file with multiple sheets
+                if message == 'SUCCESS':
+                    output_file = "updated_cell_lines.xlsx"
+                    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                        updated_cell_lines_df.to_excel(writer, sheet_name='Cell line', index=False)
+                        updated_differentiated_cell_lines_df.to_excel(writer, sheet_name='Differentiated cell line',
+                                                                      index=False)
+                        updated_library_preparations_df.to_excel(writer, sheet_name='Library preparation', index=False)
+                        updated_sequencing_files_df.to_excel(writer, sheet_name='Sequence file', index=False)
+
+                    return True, message
+                else:
+                    print("Submission has failed")
+                    # submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
+                    return False, "Submission has failed, rolled back"
+            except Exception as e:
+                print("Submission has failed")
+                # submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
+                return False, f"An error occurred: {str(e)}"

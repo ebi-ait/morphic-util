@@ -44,8 +44,8 @@ class Cmd:
             print(msg)
 
         elif args.command == 'submit-file':
-            CmdSubmitFile(args).run()
-            # print(msg)
+            success, msg = CmdSubmitFile(args).run()
+            print(msg)
 
         else:
             if profile_exists(args.profile):

@@ -248,7 +248,7 @@ class SpreadsheetSubmitter:
         xls = pd.ExcelFile(self.file_path, engine='openpyxl')
         return xls.sheet_names
 
-    def parse_cell_lines(self, sheet_name, column_mapping):
+    def parse_cell_lines(self, sheet_name):
         """
         Parses data related to cell lines from a specified sheet in the Excel file.
 
@@ -266,9 +266,11 @@ class SpreadsheetSubmitter:
             - list of CellLine objects parsed from the specified sheet.
             - pd.DataFrame with the parsed data.
         """
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl')
+        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=3)
         df.columns = df.columns.str.strip()
-        df = df.rename(columns=column_mapping)
+
+        # Remove unnamed columns (columns without headers)
+        df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
         if 'cell_line.biomaterial_core.biomaterial_id' not in df.columns:
@@ -276,16 +278,6 @@ class SpreadsheetSubmitter:
 
         # Filter rows where biomaterial_id is not null
         df = df[df['cell_line.biomaterial_core.biomaterial_id'].notna()]
-
-        # Filter column_mapping to include only keys that exist in df.columns
-        columns_to_select = [col_mapping_val for col_mapping_key, col_mapping_val in column_mapping.items() if
-                             col_mapping_val in df.columns]
-
-        if not columns_to_select:
-            raise ValueError("No valid columns found in the column_mapping that exist in the DataFrame.")
-
-        # Select only columns that are present in df
-        df = df[columns_to_select]
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['cell_line.biomaterial_core.biomaterial_id']
@@ -329,7 +321,7 @@ class SpreadsheetSubmitter:
 
         return cell_lines, df_filtered
 
-    def parse_differentiated_cell_lines(self, sheet_name, column_mapping):
+    def parse_differentiated_cell_lines(self, sheet_name):
         """
         Parses data related to differentiated cell lines from a specified sheet in the Excel file.
 
@@ -345,9 +337,11 @@ class SpreadsheetSubmitter:
         list
             A list of DifferentiatedCellLine objects parsed from the specified sheet.
         """
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl')
+        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=3)
         df.columns = df.columns.str.strip()
-        df = df.rename(columns=column_mapping)
+
+        # Remove unnamed columns (columns without headers)
+        df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
         if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
@@ -355,16 +349,6 @@ class SpreadsheetSubmitter:
 
         # Filter rows where biomaterial_id is not null
         df = df[df['differentiated_cell_line.biomaterial_core.biomaterial_id'].notna()]
-
-        # Filter column_mapping to include only keys that exist in df.columns
-        columns_to_select = [col_mapping_val for col_mapping_key, col_mapping_val in column_mapping.items() if
-                             col_mapping_val in df.columns]
-
-        if not columns_to_select:
-            raise ValueError("No valid columns found in the column_mapping that exist in the DataFrame.")
-
-        # Select only columns that are present in df
-        df = df[columns_to_select]
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['differentiated_cell_line.biomaterial_core.biomaterial_id']
@@ -394,7 +378,7 @@ class SpreadsheetSubmitter:
 
         return differentiated_cell_lines, df_filtered
 
-    def parse_library_preparations(self, sheet_name, column_mapping):
+    def parse_library_preparations(self, sheet_name):
         """
         Parses data related to library preparations from a specified sheet in the Excel file.
 
@@ -410,9 +394,11 @@ class SpreadsheetSubmitter:
         list
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl')
+        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=3)
         df.columns = df.columns.str.strip()
-        df = df.rename(columns=column_mapping)
+
+        # Remove unnamed columns (columns without headers)
+        df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
         if 'library_preparation.biomaterial_core.biomaterial_id' not in df.columns:
@@ -423,16 +409,6 @@ class SpreadsheetSubmitter:
         df = df[df['library_preparation.biomaterial_core.biomaterial_id'].notna()]
         # TODO: for all
         df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-
-        # Filter column_mapping to include only keys that exist in df.columns
-        columns_to_select = [col_mapping_val for col_mapping_key, col_mapping_val in column_mapping.items() if
-                             col_mapping_val in df.columns]
-
-        if not columns_to_select:
-            raise ValueError("No valid columns found in the column_mapping that exist in the DataFrame.")
-
-        # Select only columns that are present in df
-        df = df[columns_to_select]
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['library_preparation.biomaterial_core.biomaterial_id']
@@ -467,7 +443,7 @@ class SpreadsheetSubmitter:
 
         return library_preparations, df_filtered
 
-    def parse_sequencing_files(self, sheet_name, column_mapping):
+    def parse_sequencing_files(self, sheet_name):
         """
         Parses data related to sequencing files from a specified sheet in the Excel file.
 
@@ -483,9 +459,11 @@ class SpreadsheetSubmitter:
         list
             A list of SequencingFile objects parsed from the specified sheet.
         """
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl')
+        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=3)
         df.columns = df.columns.str.strip()
-        df = df.rename(columns=column_mapping)
+
+        # Remove unnamed columns (columns without headers)
+        df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
         if 'sequence_file.file_core.file_name' not in df.columns:
@@ -493,9 +471,6 @@ class SpreadsheetSubmitter:
 
         # Filter rows where file_name is not null
         df = df[df['sequence_file.file_core.file_name'].notna()]
-
-        # Select only columns that are not None in the column_mapping
-        df = df[[col for col in column_mapping.values() if col is not None]]
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['sequence_file.file_core.file_name']
@@ -523,7 +498,7 @@ class SpreadsheetSubmitter:
 
         return sequencing_files, df_filtered
 
-    def get_cell_lines(self, sheet_name, column_mapping):
+    def get_cell_lines(self, sheet_name):
         """
         Retrieves parsed cell lines data from a specified sheet in the Excel file.
 
@@ -539,10 +514,10 @@ class SpreadsheetSubmitter:
         list
             A list of CellLine objects parsed from the specified sheet.
         """
-        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name, column_mapping)
+        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name)
         return cell_lines, cell_lines_df
 
-    def get_differentiated_cell_lines(self, sheet_name, column_mapping):
+    def get_differentiated_cell_lines(self, sheet_name):
         """
         Retrieves parsed differentiated cell lines data from a specified sheet in the Excel file.
 
@@ -558,8 +533,7 @@ class SpreadsheetSubmitter:
         list
             A list of DifferentiatedCellLine objects parsed from the specified sheet.
         """
-        differentiated_cell_lines, differentiated_cell_lines_df = self.parse_differentiated_cell_lines(sheet_name,
-                                                                                                       column_mapping)
+        differentiated_cell_lines, differentiated_cell_lines_df = self.parse_differentiated_cell_lines(sheet_name)
         return differentiated_cell_lines, differentiated_cell_lines_df
 
     def merge_cell_line_and_differentiated_cell_line(self, cell_lines, differentiated_cell_lines):
@@ -583,6 +557,7 @@ class SpreadsheetSubmitter:
             If a differentiated cell line does not have a corresponding cell line.
         """
         cell_line_ids = {cell_line.biomaterial_id for cell_line in cell_lines}
+
         for differentiated_cell_line in differentiated_cell_lines:
             if differentiated_cell_line.input_biomaterial_id not in cell_line_ids:
                 raise MissingEntityError("Cell Line",
@@ -615,6 +590,7 @@ class SpreadsheetSubmitter:
             If a library preparation does not have a corresponding differentiated cell line.
         """
         differentiated_ids = {diff_cell.biomaterial_id for diff_cell in differentiated_cell_lines}
+
         for library_preparation in library_preparations:
             if library_preparation.differentiated_biomaterial_id not in differentiated_ids:
                 raise MissingEntityError("Differentiated Cell Line",
@@ -647,6 +623,7 @@ class SpreadsheetSubmitter:
             If a sequencing file does not have a corresponding library preparation.
         """
         library_ids = {lib_prep.biomaterial_id for lib_prep in library_preparations}
+
         for sequencing_file in sequencing_files:
             if sequencing_file.library_preparation_id not in library_ids:
                 raise MissingEntityError("Library preparation",
@@ -658,7 +635,7 @@ class SpreadsheetSubmitter:
                 if sequencing_file.library_preparation_id == library_preparation.biomaterial_id:
                     library_preparation.add_sequencing_file(sequencing_file)
 
-    def get_library_preparations(self, sheet_name, column_mapping):
+    def get_library_preparations(self, sheet_name):
         """
         Retrieves parsed library preparations data from a specified sheet in the Excel file.
 
@@ -674,10 +651,10 @@ class SpreadsheetSubmitter:
         list
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
-        library_preparations, df_filtered = self.parse_library_preparations(sheet_name, column_mapping)
+        library_preparations, df_filtered = self.parse_library_preparations(sheet_name)
         return library_preparations, df_filtered
 
-    def get_sequencing_files(self, sheet_name, column_mapping):
+    def get_sequencing_files(self, sheet_name):
         """
         Retrieves parsed sequencing files data from a specified sheet in the Excel file.
 
@@ -693,5 +670,5 @@ class SpreadsheetSubmitter:
         list
             A list of SequencingFile objects parsed from the specified sheet.
         """
-        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, column_mapping)
+        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name)
         return sequencing_files, df_filtered

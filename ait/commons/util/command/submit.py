@@ -86,7 +86,7 @@ class CmdSubmit:
         """
         return self.typed_submission(self.type, self.file, self.access_token)
 
-    def handle_cell_line(self, cell_line, cell_lines_df, submission_envelope_id, access_token):
+    def handle_cell_line(self, cell_line, cell_lines_df, submission_envelope_id, access_token, action):
         """
         Submits a cell line as a biomaterial entity to a specified submission envelope.
 
@@ -99,31 +99,37 @@ class CmdSubmit:
         Returns:
         - cell_line_entity_id: Entity ID of the submitted cell line biomaterial.
         """
-        cell_line_entity_id_column_name = "Identifier"
+        if action == 'modify' or action == 'MODIFY':
+            success = self.patchEntity('biomaterial', cell_line.id, cell_line.to_dict(), access_token)
 
-        if cell_line_entity_id_column_name not in cell_lines_df.columns:
-            cell_lines_df[cell_line_entity_id_column_name] = np.nan
+            if success:
+                print("Updated cell line: " + cell_line.id + " / " + cell_line.biomaterial_id)
+        else:
+            cell_line_entity_id_column_name = "Identifier"
 
-        print(f"Creating Cell Line Biomaterial: {cell_line.biomaterial_id}")
+            if cell_line_entity_id_column_name not in cell_lines_df.columns:
+                cell_lines_df[cell_line_entity_id_column_name] = np.nan
 
-        cell_line_entity_id = self.use_existing_envelope_and_submit_entity(
-            'biomaterial',
-            cell_line.to_dict(),
-            submission_envelope_id,
-            access_token
-        )
+            print(f"Creating Cell Line Biomaterial: {cell_line.biomaterial_id}")
 
-        cell_lines_df.loc[
-            cell_lines_df['cell_line.biomaterial_core.biomaterial_id'] ==
-            cell_line.biomaterial_id,
-            cell_line_entity_id_column_name
-        ] = cell_line_entity_id
+            cell_line_entity_id = self.use_existing_envelope_and_submit_entity(
+                'biomaterial',
+                cell_line.to_dict(),
+                submission_envelope_id,
+                access_token
+            )
 
-        return cell_line_entity_id
+            cell_lines_df.loc[
+                cell_lines_df['cell_line.biomaterial_core.biomaterial_id'] ==
+                cell_line.biomaterial_id,
+                cell_line_entity_id_column_name
+            ] = cell_line_entity_id
+
+            return cell_line_entity_id
 
     def handle_differentiated_cell_line(self, cell_line, cell_line_entity_id, differentiated_cell_line,
-                                        differentiated_cell_lines_df, library_preparations_df,
-                                        sequencing_file_df, submission_envelope_id, access_token):
+                                        differentiated_cell_lines_df, submission_envelope_id, access_token
+                                        , action):
         """
         Handles a single differentiated cell line associated with a given cell line.
 
@@ -137,74 +143,82 @@ class CmdSubmit:
         - submission_envelope_id: ID of the submission envelope where entities will be linked.
         - access_token: Access token for authentication and authorization.
         """
-        print("Cell line has differentiated cell lines, creating differentiation process to link them")
+        if action == 'modify' or action == 'MODIFY':
+            success = self.patchEntity('biomaterial', differentiated_cell_line.id, differentiated_cell_line.to_dict(),
+                                       access_token)
 
-        differentiation_process_entity_id = self.use_existing_envelope_and_submit_entity(
-            'process', get_process_content('differentiation'),
-            submission_envelope_id, access_token
-        )
+            if success:
+                print("Updated differentiated cell line: " + differentiated_cell_line.id + " / " +
+                      differentiated_cell_line.biomaterial_id)
+        else:
+            print("Cell line has differentiated cell lines, creating differentiation process to link them")
 
-        differentiated_biomaterial_to_entity_id_map = {}
-        differentiated_cell_line_entity_id_column_name = "Id"
+            differentiation_process_entity_id = self.use_existing_envelope_and_submit_entity(
+                'process', get_process_content('differentiation'),
+                submission_envelope_id, access_token
+            )
 
-        if differentiated_cell_line_entity_id_column_name not in differentiated_cell_lines_df.columns:
-            differentiated_cell_lines_df[differentiated_cell_line_entity_id_column_name] = np.nan
+            differentiated_biomaterial_to_entity_id_map = {}
+            differentiated_cell_line_entity_id_column_name = "Id"
 
-        print(
-            f"Creating Differentiated Cell Line Biomaterial: {differentiated_cell_line.biomaterial_id} "
-            f"as a child of Cell line: {cell_line_entity_id}")
+            if differentiated_cell_line_entity_id_column_name not in differentiated_cell_lines_df.columns:
+                differentiated_cell_lines_df[differentiated_cell_line_entity_id_column_name] = np.nan
 
-        differentiated_entity_id = self.create_child_biomaterial(
-            cell_line_entity_id,
-            differentiated_cell_line.to_dict(),
-            access_token
-        )
+            print(
+                f"Creating Differentiated Cell Line Biomaterial: {differentiated_cell_line.biomaterial_id} "
+                f"as a child of Cell line: {cell_line_entity_id}")
 
-        print(f"Created Differentiated Cell Line Biomaterial: {differentiated_entity_id}")
+            differentiated_entity_id = self.create_child_biomaterial(
+                cell_line_entity_id,
+                differentiated_cell_line.to_dict(),
+                access_token
+            )
 
-        print(
-            f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} "
-            f"to envelope: {submission_envelope_id}")
+            print(f"Created Differentiated Cell Line Biomaterial: {differentiated_entity_id}")
 
-        self.link_entity_to_envelope(
-            'biomaterial',
-            differentiated_entity_id,
-            submission_envelope_id,
-            access_token
-        )
+            print(
+                f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} "
+                f"to envelope: {submission_envelope_id}")
 
-        print(
-            f"Linking Cell Line Biomaterial: {cell_line_entity_id} as "
-            f"input to process : {differentiation_process_entity_id}")
+            self.link_entity_to_envelope(
+                'biomaterial',
+                differentiated_entity_id,
+                submission_envelope_id,
+                access_token
+            )
 
-        self.perform_hal_linkage(
-            f"{self.base_url}/biomaterials/{cell_line_entity_id}/inputToProcesses",
-            differentiation_process_entity_id, 'processes', access_token
-        )
+            print(
+                f"Linking Cell Line Biomaterial: {cell_line_entity_id} as "
+                f"input to process : {differentiation_process_entity_id}")
 
-        print(
-            f"Linking Differentiated cell line Biomaterial: {differentiated_entity_id} "
-            f"as derived by process : {differentiation_process_entity_id}")
+            self.perform_hal_linkage(
+                f"{self.base_url}/biomaterials/{cell_line_entity_id}/inputToProcesses",
+                differentiation_process_entity_id, 'processes', access_token
+            )
 
-        self.perform_hal_linkage(
-            f"{self.base_url}/biomaterials/{differentiated_entity_id}/derivedByProcesses",
-            differentiation_process_entity_id, 'processes', access_token
-        )
+            print(
+                f"Linking Differentiated cell line Biomaterial: {differentiated_entity_id} "
+                f"as derived by process : {differentiation_process_entity_id}")
 
-        differentiated_biomaterial_to_entity_id_map[
-            differentiated_cell_line.biomaterial_id] = differentiated_entity_id
+            self.perform_hal_linkage(
+                f"{self.base_url}/biomaterials/{differentiated_entity_id}/derivedByProcesses",
+                differentiation_process_entity_id, 'processes', access_token
+            )
 
-        differentiated_cell_lines_df.loc[
-            differentiated_cell_lines_df[
-                'differentiated_cell_line.biomaterial_core.biomaterial_id'] ==
-            differentiated_cell_line.biomaterial_id,
-            differentiated_cell_line_entity_id_column_name
-        ] = differentiated_entity_id
+            differentiated_biomaterial_to_entity_id_map[
+                differentiated_cell_line.biomaterial_id] = differentiated_entity_id
 
-        return differentiated_entity_id
+            differentiated_cell_lines_df.loc[
+                differentiated_cell_lines_df[
+                    'differentiated_cell_line.biomaterial_core.biomaterial_id'] ==
+                differentiated_cell_line.biomaterial_id,
+                differentiated_cell_line_entity_id_column_name
+            ] = differentiated_entity_id
+
+            return differentiated_entity_id
 
     def handle_library_preparation(self, differentiated_entity_id, library_preparation,
-                                   library_preparations_df, submission_envelope_id, access_token):
+                                   library_preparations_df, submission_envelope_id, access_token, action):
         """
         Handles a single library preparation associated with a given differentiated cell line.
 
@@ -217,62 +231,71 @@ class CmdSubmit:
         - submission_envelope_id: ID of the submission envelope where entities will be linked.
         - access_token: Access token for authentication and authorization.
         """
-        print(f"Creating Library Preparation for Differentiated Cell Line Biomaterial: "
-              f"{differentiated_entity_id}")
+        if action == 'modify' or action == 'MODIFY':
+            success = self.patchEntity('biomaterial', library_preparation.id,
+                                       library_preparation.to_dict(),
+                                       access_token)
 
-        library_preparation_entity_id = self.create_child_biomaterial(
-            differentiated_entity_id,
-            library_preparation.to_dict(),
-            access_token
-        )
+            if success:
+                print("Updated library preparation biomaterial: " + library_preparation.id + " / " +
+                      library_preparation.biomaterial_id)
+        else:
+            print(f"Creating Library Preparation for Differentiated Cell Line Biomaterial: "
+                  f"{differentiated_entity_id}")
 
-        print(f"Created Library Preparation Biomaterial: {library_preparation_entity_id}")
+            library_preparation_entity_id = self.create_child_biomaterial(
+                differentiated_entity_id,
+                library_preparation.to_dict(),
+                access_token
+            )
 
-        print(
-            f"Linking Library Preparation Biomaterial: {library_preparation_entity_id} "
-            f"to envelope: {submission_envelope_id}")
+            print(f"Created Library Preparation Biomaterial: {library_preparation_entity_id}")
 
-        self.link_entity_to_envelope(
-            'biomaterial',
-            library_preparation_entity_id,
-            submission_envelope_id,
-            access_token
-        )
+            print(
+                f"Linking Library Preparation Biomaterial: {library_preparation_entity_id} "
+                f"to envelope: {submission_envelope_id}")
 
-        print(
-            f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} "
-            f"as input to library preparation process")
+            self.link_entity_to_envelope(
+                'biomaterial',
+                library_preparation_entity_id,
+                submission_envelope_id,
+                access_token
+            )
 
-        library_preparation_process_entity_id = self.use_existing_envelope_and_submit_entity(
-            'process', get_process_content('library_preparation'),
-            submission_envelope_id, access_token
-        )
+            print(
+                f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} "
+                f"as input to library preparation process")
 
-        self.perform_hal_linkage(
-            f"{self.base_url}/biomaterials/{differentiated_entity_id}/inputToProcesses",
-            library_preparation_process_entity_id, 'processes', access_token
-        )
+            library_preparation_process_entity_id = self.use_existing_envelope_and_submit_entity(
+                'process', get_process_content('library_preparation'),
+                submission_envelope_id, access_token
+            )
 
-        print(
-            f"Linking Library Preparation Biomaterial: {library_preparation_entity_id} "
-            f"as derived by library preparation process")
+            self.perform_hal_linkage(
+                f"{self.base_url}/biomaterials/{differentiated_entity_id}/inputToProcesses",
+                library_preparation_process_entity_id, 'processes', access_token
+            )
 
-        self.perform_hal_linkage(
-            f"{self.base_url}/biomaterials/{library_preparation_entity_id}/derivedByProcesses",
-            library_preparation_process_entity_id, 'processes', access_token
-        )
+            print(
+                f"Linking Library Preparation Biomaterial: {library_preparation_entity_id} "
+                f"as derived by library preparation process")
 
-        library_preparations_df.loc[
-            library_preparations_df[
-                'library_preparation.biomaterial_core.biomaterial_id'] ==
-            library_preparation.biomaterial_id,
-            'Id'
-        ] = library_preparation_entity_id
+            self.perform_hal_linkage(
+                f"{self.base_url}/biomaterials/{library_preparation_entity_id}/derivedByProcesses",
+                library_preparation_process_entity_id, 'processes', access_token
+            )
 
-        return library_preparation_entity_id
+            library_preparations_df.loc[
+                library_preparations_df[
+                    'library_preparation.biomaterial_core.biomaterial_id'] ==
+                library_preparation.biomaterial_id,
+                'Id'
+            ] = library_preparation_entity_id
+
+            return library_preparation_entity_id
 
     def handle_sequencing_file(self, library_preparation, library_preparation_entity_id, sequencing_file,
-                               sequencing_file_df, submission_envelope_id, access_token):
+                               sequencing_file_df, submission_envelope_id, access_token, action):
         """
         Handles a single sequencing file associated with a given library preparation.
 
@@ -284,62 +307,72 @@ class CmdSubmit:
         - submission_envelope_id: ID of the submission envelope where entities will be linked.
         - access_token: Access token for authentication and authorization.
         """
-        print("Creating sequencing process to link the sequencing file")
+        if action == 'modify' or action == 'MODIFY':
+            success = self.patchEntity('file', sequencing_file.id,
+                                       sequencing_file.to_dict(),
+                                       access_token)
 
-        sequencing_process_entity_id = self.use_existing_envelope_and_submit_entity(
-            'process', get_process_content('sequencing'),
-            submission_envelope_id,
-            access_token
-        )
+            if success:
+                print("Updated sequencing file: " + sequencing_file.id + " / " +
+                      sequencing_file.file_name)
+        else:
+            print("Creating sequencing process to link the sequencing file")
 
-        sequencing_file_entity_id_column_name = "Id"
+            sequencing_process_entity_id = self.use_existing_envelope_and_submit_entity(
+                'process', get_process_content('sequencing'),
+                submission_envelope_id,
+                access_token
+            )
 
-        if sequencing_file_entity_id_column_name not in sequencing_file_df.columns:
-            sequencing_file_df[sequencing_file_entity_id_column_name] = np.nan
+            sequencing_file_entity_id_column_name = "Id"
 
-        print(
-            f"Creating Sequencing file: {sequencing_file.file_name} "
-            f"as a result of sequencing the Library preparation biomaterial: {library_preparation_entity_id}")
+            if sequencing_file_entity_id_column_name not in sequencing_file_df.columns:
+                sequencing_file_df[sequencing_file_entity_id_column_name] = np.nan
 
-        sequencing_file_entity_id = self.use_existing_envelope_and_submit_entity(
-            'file',
-            sequencing_file.to_dict(),
-            submission_envelope_id,
-            access_token
-        )
+            print(
+                f"Creating Sequencing file: {sequencing_file.file_name} "
+                f"as a result of sequencing the Library preparation biomaterial: {library_preparation_entity_id}")
 
-        print(f"Created Sequencing file: {sequencing_file_entity_id}")
+            sequencing_file_entity_id = self.use_existing_envelope_and_submit_entity(
+                'file',
+                sequencing_file.to_dict(),
+                submission_envelope_id,
+                access_token
+            )
 
-        print(
-            f"Linking Library preparation Biomaterial: {library_preparation_entity_id} "
-            f"as input to process: {sequencing_process_entity_id}")
+            print(f"Created Sequencing file: {sequencing_file_entity_id}")
 
-        self.perform_hal_linkage(
-            f"{self.base_url}/biomaterials/{library_preparation_entity_id}/inputToProcesses",
-            sequencing_process_entity_id, 'processes', access_token
-        )
+            print(
+                f"Linking Library preparation Biomaterial: {library_preparation_entity_id} "
+                f"as input to process: {sequencing_process_entity_id}")
 
-        print(
-            f"Linking Sequencing file: {sequencing_file_entity_id} "
-            f"as derived by process: {sequencing_process_entity_id}")
+            self.perform_hal_linkage(
+                f"{self.base_url}/biomaterials/{library_preparation_entity_id}/inputToProcesses",
+                sequencing_process_entity_id, 'processes', access_token
+            )
 
-        self.perform_hal_linkage(
-            f"{self.base_url}/files/{sequencing_file_entity_id}/derivedByProcesses",
-            sequencing_process_entity_id, 'processes', access_token
-        )
+            print(
+                f"Linking Sequencing file: {sequencing_file_entity_id} "
+                f"as derived by process: {sequencing_process_entity_id}")
 
-        sequencing_file_df.loc[
-            sequencing_file_df[
-                'sequence_file.file_core.file_name'] == sequencing_file.file_name,
-            sequencing_file_entity_id_column_name
-        ] = sequencing_file_entity_id
+            self.perform_hal_linkage(
+                f"{self.base_url}/files/{sequencing_file_entity_id}/derivedByProcesses",
+                sequencing_process_entity_id, 'processes', access_token
+            )
+
+            sequencing_file_df.loc[
+                sequencing_file_df[
+                    'sequence_file.file_core.file_name'] == sequencing_file.file_name,
+                sequencing_file_entity_id_column_name
+            ] = sequencing_file_entity_id
 
     def multi_type_submission(self, cell_lines, cell_lines_df,
                               differentiated_cell_lines_df,
                               library_preparations_df,
                               sequencing_file_df,
                               submission_envelope_id,
-                              access_token):
+                              access_token,
+                              action):
         """
         Handles the submission of multiple types of biomaterials (cell lines,
         differentiated cell lines, library preparations)
@@ -363,23 +396,24 @@ class CmdSubmit:
                 cell_line_entity_id = self.handle_cell_line(cell_line,
                                                             cell_lines_df,
                                                             submission_envelope_id,
-                                                            access_token)
+                                                            access_token,
+                                                            action)
 
                 for differentiated_cell_line in cell_line.differentiated_cell_lines:
                     differentiated_entity_id = self.handle_differentiated_cell_line(cell_line, cell_line_entity_id,
                                                                                     differentiated_cell_line,
                                                                                     differentiated_cell_lines_df,
-                                                                                    library_preparations_df,
-                                                                                    sequencing_file_df,
                                                                                     submission_envelope_id,
-                                                                                    access_token)
+                                                                                    access_token,
+                                                                                    action)
 
                     for library_preparation in differentiated_cell_line.library_preparations:
                         library_preparation_entity_id = self.handle_library_preparation(differentiated_entity_id,
                                                                                         library_preparation,
                                                                                         library_preparations_df,
                                                                                         submission_envelope_id,
-                                                                                        access_token)
+                                                                                        access_token,
+                                                                                        action)
 
                         for sequencing_file in library_preparation.sequencing_files:
                             self.handle_sequencing_file(library_preparation,
@@ -387,7 +421,8 @@ class CmdSubmit:
                                                         sequencing_file,
                                                         sequencing_file_df,
                                                         submission_envelope_id,
-                                                        access_token)
+                                                        access_token,
+                                                        action)
 
             message = 'SUCCESS'
         except Exception as e:
@@ -417,7 +452,7 @@ class CmdSubmit:
         Returns:
             tuple: A tuple containing a boolean indicating success and the ID of the created entity.
         """
-        if type in ['study', 'dataset', 'biomaterial', 'process']:
+        if type in ['study', 'dataset', 'biomaterial', 'process', 'file']:
             if file is not None:
                 data = self.transform(file)
             else:
@@ -491,6 +526,34 @@ class CmdSubmit:
         print(f"{input_entity_type.capitalize()} created successfully: " + entity_id)
 
         return entity_id
+
+    def patchEntity(self, input_entity_type, id, data, access_token):
+        if input_entity_type == 'study':
+            halEntity = 'studies'
+        elif input_entity_type == 'dataset':
+            halEntity = 'datasets'
+        elif input_entity_type == 'biomaterial':
+            halEntity = 'biomaterials'
+        elif input_entity_type == 'process':
+            halEntity = 'processes'
+        elif input_entity_type == 'file':
+            halEntity = 'files'
+
+        entity_patch_url = self.base_url + '/' + halEntity + '/' + id
+
+        return self.patch_to_provider_api(entity_patch_url, data, access_token)
+
+    def patch_to_provider_api(self, entity_patch_url, data, access_token):
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {access_token}'
+        }
+
+        response = requests.patch(entity_patch_url, headers=headers, json=data)
+
+        if response.status_code // 100 == 2:
+            return True
+        return False
 
     def use_existing_envelope_and_submit_entity(self, input_entity_type, data,
                                                 submission_envelope_id, access_token):
@@ -621,9 +684,11 @@ class CmdSubmit:
         }
 
         response = requests.delete(url, headers=headers, params=params)
-        response_data = response.json()
 
-        return response_data
+        # Check if the status code indicates success (2xx)
+        if response.status_code // 100 == 2:
+            return True
+        return False
 
     def post_to_provider_api_and_get_entity_id(self, url, data, access_token):
         """

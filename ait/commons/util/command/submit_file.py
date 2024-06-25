@@ -69,37 +69,36 @@ class CmdSubmitFile:
         list_of_files_in_upload_area = (list_instance.
                                         list_bucket_contents_and_return(self.dataset, ''))
 
-        print("Files in the upload area:")
-
-        for file_key in list_of_files_in_upload_area:
-            print(file_key)
-
         if self.file:
             # Initialize SpreadsheetParser with the provided file path
             parser = SpreadsheetSubmitter(self.file)
 
             # Parse different sections of the spreadsheet using defined column mappings
-            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line')
+            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line', self.action)
             differentiated_cell_lines, differentiated_cell_lines_df = parser.get_differentiated_cell_lines(
-                'Differentiated cell line')
+                'Differentiated cell line', self.action)
             parser.merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines)
-            library_preparations, library_preparations_df = parser.get_library_preparations('Library preparation')
+            library_preparations, library_preparations_df = (parser
+                                                             .get_library_preparations('Library preparation',
+                                                                                       self.action))
             parser.merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
                                                                           library_preparations)
-            sequencing_files, sequencing_files_df = parser.get_sequencing_files('Sequence file')
+            sequencing_files, sequencing_files_df = parser.get_sequencing_files('Sequence file', self.action)
 
             validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
 
             parser.merge_library_preparation_sequencing_file(library_preparations, sequencing_files)
 
-            # Print each CellLine object in CellLineMaster
-            submission_envelope_response = submission_instance.create_new_submission_envelope(
-                self.submission_envelope_create_url,
-                access_token=self.access_token)
-            self_url = submission_envelope_response['_links']['self']['href']
-            submission_envelope_id = get_id_from_url(self_url)
+            if self.action != 'modify' and self.action != 'MODIFY':
+                submission_envelope_response = submission_instance.create_new_submission_envelope(
+                    self.submission_envelope_create_url,
+                    access_token=self.access_token)
+                self_url = submission_envelope_response['_links']['self']['href']
+                submission_envelope_id = get_id_from_url(self_url)
 
-            print("Submission envelope for this submission is: " + submission_envelope_id)
+                print("Submission envelope for this submission is: " + submission_envelope_id)
+            else:
+                submission_envelope_id = None
 
             # Perform the submission and get the updated dataframes
             try:
@@ -112,25 +111,30 @@ class CmdSubmitFile:
                     library_preparations_df,
                     sequencing_files_df,
                     submission_envelope_id,
-                    self.access_token
+                    self.access_token,
+                    self.action
                 )
 
                 # Save the updated dataframes to a single Excel file with multiple sheets
                 if message == 'SUCCESS':
                     output_file = "updated_cell_lines.xlsx"
                     with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-                        updated_cell_lines_df.to_excel(writer, sheet_name='Cell line', index=False)
-                        updated_differentiated_cell_lines_df.to_excel(writer, sheet_name='Differentiated cell line',
+                        updated_cell_lines_df.to_excel(writer,
+                                                       sheet_name='Cell line', index=False)
+                        updated_differentiated_cell_lines_df.to_excel(writer,
+                                                                      sheet_name='Differentiated cell line',
                                                                       index=False)
-                        updated_library_preparations_df.to_excel(writer, sheet_name='Library preparation', index=False)
-                        updated_sequencing_files_df.to_excel(writer, sheet_name='Sequence file', index=False)
+                        updated_library_preparations_df.to_excel(writer,
+                                                                 sheet_name='Library preparation', index=False)
+                        updated_sequencing_files_df.to_excel(writer,
+                                                             sheet_name='Sequence file', index=False)
 
                     return True, message
                 else:
-                    print("Submission has failed")
-                    # submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
+                    print("Submission has failed, rolling back")
+                    submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
                     return False, "Submission has failed, rolled back"
             except Exception as e:
-                print("Submission has failed")
-                # submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
+                print("Submission has failed, rolling back")
+                submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
                 return False, f"An error occurred: {str(e)}"

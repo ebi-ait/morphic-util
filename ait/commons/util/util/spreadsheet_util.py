@@ -20,7 +20,8 @@ class MissingEntityError(Exception):
 
 
 class CellLine:
-    def __init__(self, biomaterial_id, description, derived_accession, clone_id, protocol_id, zygosity, cell_type):
+    def __init__(self, biomaterial_id, description, derived_accession,
+                 clone_id, protocol_id, zygosity, cell_type, id):
         self.biomaterial_id = biomaterial_id
         self.description = description
         self.derived_accession = derived_accession
@@ -29,6 +30,7 @@ class CellLine:
         self.zygosity = zygosity
         self.cell_type = cell_type
         self.differentiated_cell_lines = []
+        self.id = id
 
     def add_differentiated_cell_line(self, differentiated_cell_line):
         self.differentiated_cell_lines.append(differentiated_cell_line)
@@ -52,7 +54,7 @@ class CellLine:
 
 class DifferentiatedCellLine:
     def __init__(self, biomaterial_id, description, input_biomaterial_id, protocol_id, timepoint_value, timepoint_unit,
-                 terminally_differentiated, model_system):
+                 terminally_differentiated, model_system, id):
         self.biomaterial_id = biomaterial_id
         self.description = description
         self.input_biomaterial_id = input_biomaterial_id
@@ -62,6 +64,7 @@ class DifferentiatedCellLine:
         self.terminally_differentiated = terminally_differentiated
         self.model_system = model_system
         self.library_preparations = []
+        self.id = id
 
     def add_library_preparation(self, library_preparation):
         self.library_preparations.append(library_preparation)
@@ -88,7 +91,7 @@ class LibraryPreparation:
     def __init__(self, biomaterial_id, protocol_id, dissociation_protocol_id, differentiated_biomaterial_id,
                  average_fragment_size, input_amount_value, input_amount_unit,
                  final_yield_value, final_yield_unit, concentration_value, concentration_unit,
-                 pcr_cycles, pcr_cycles_for_sample_index):
+                 pcr_cycles, pcr_cycles_for_sample_index, id):
         self.biomaterial_id = biomaterial_id
         self.protocol_id = protocol_id
         self.dissociation_protocol_id = dissociation_protocol_id
@@ -103,6 +106,7 @@ class LibraryPreparation:
         self.pcr_cycles = pcr_cycles
         self.pcr_cycles_for_sample_index = pcr_cycles_for_sample_index
         self.sequencing_files = []
+        self.id = id
 
     def add_sequencing_file(self, sequencing_file):
         self.sequencing_files.append(sequencing_file)
@@ -142,13 +146,14 @@ class EntityType:
 
 
 class SequencingFile:
-    def __init__(self, file_name, library_preparation_id, sequencing_protocol_id, read_index, run_id):
+    def __init__(self, file_name, library_preparation_id, sequencing_protocol_id, read_index, run_id, id):
         self.file_name = file_name
         self.library_preparation_id = library_preparation_id
         self.sequencing_protocol_id = sequencing_protocol_id
         self.read_index = read_index
         self.run_id = run_id
         self.entity_type = EntityType.FILE
+        self.id = id
         self.content = {
             "file_name": self.file_name,
             "library_preparation_id": self.library_preparation_id,
@@ -248,7 +253,7 @@ class SpreadsheetSubmitter:
         xls = pd.ExcelFile(self.file_path, engine='openpyxl')
         return xls.sheet_names
 
-    def parse_cell_lines(self, sheet_name):
+    def parse_cell_lines(self, sheet_name, action):
         """
         Parses data related to cell lines from a specified sheet in the Excel file.
 
@@ -266,7 +271,12 @@ class SpreadsheetSubmitter:
             - list of CellLine objects parsed from the specified sheet.
             - pd.DataFrame with the parsed data.
         """
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=3)
+        if action.upper() == 'MODIFY':
+            skip_rows = 0
+        else:
+            skip_rows = 3
+
+        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
 
         # Remove unnamed columns (columns without headers)
@@ -315,13 +325,14 @@ class SpreadsheetSubmitter:
                     clone_id=row.get('cell_line.clone_id'),
                     protocol_id=row.get('gene_expression_alteration_protocol.protocol_core.protocol_id'),
                     zygosity=row.get('cell_line.zygosity'),
-                    cell_type=cell_type
+                    cell_type=cell_type,
+                    id=row.get('Identifier'),
                 )
             )
 
         return cell_lines, df_filtered
 
-    def parse_differentiated_cell_lines(self, sheet_name):
+    def parse_differentiated_cell_lines(self, sheet_name, action):
         """
         Parses data related to differentiated cell lines from a specified sheet in the Excel file.
 
@@ -337,7 +348,12 @@ class SpreadsheetSubmitter:
         list
             A list of DifferentiatedCellLine objects parsed from the specified sheet.
         """
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=3)
+        if action.upper() == 'MODIFY':
+            skip_rows = 0
+        else:
+            skip_rows = 3
+
+        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
 
         # Remove unnamed columns (columns without headers)
@@ -371,14 +387,15 @@ class SpreadsheetSubmitter:
                 timepoint_value=row.get('differentiated_cell_line.timepoint_value'),
                 timepoint_unit=row.get('differentiated_cell_line.timepoint_unit.text'),
                 terminally_differentiated=row.get('differentiated_cell_line.terminally_differentiated'),
-                model_system=row.get('differentiated_cell_line.model_organ.text')
+                model_system=row.get('differentiated_cell_line.model_organ.text'),
+                id=row.get('Id')
             )
             for _, row in df_filtered.iterrows()
         ]
 
         return differentiated_cell_lines, df_filtered
 
-    def parse_library_preparations(self, sheet_name):
+    def parse_library_preparations(self, sheet_name, action):
         """
         Parses data related to library preparations from a specified sheet in the Excel file.
 
@@ -394,7 +411,12 @@ class SpreadsheetSubmitter:
         list
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=3)
+        if action.upper() == 'MODIFY':
+            skip_rows = 0
+        else:
+            skip_rows = 3
+
+        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
 
         # Remove unnamed columns (columns without headers)
@@ -436,14 +458,15 @@ class SpreadsheetSubmitter:
                 concentration_value=row.get('library_preparation.concentration_value'),
                 concentration_unit=row.get('library_preparation.concentration_unit'),
                 pcr_cycles=row.get('library_preparation.pcr_cycles'),
-                pcr_cycles_for_sample_index=row.get('library_preparation.pcr_cycles_for_sample_index')
+                pcr_cycles_for_sample_index=row.get('library_preparation.pcr_cycles_for_sample_index'),
+                id=row.get('Id')
             )
             for _, row in df_filtered.iterrows()
         ]
 
         return library_preparations, df_filtered
 
-    def parse_sequencing_files(self, sheet_name):
+    def parse_sequencing_files(self, sheet_name, action):
         """
         Parses data related to sequencing files from a specified sheet in the Excel file.
 
@@ -459,7 +482,12 @@ class SpreadsheetSubmitter:
         list
             A list of SequencingFile objects parsed from the specified sheet.
         """
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=3)
+        if action.upper() == 'MODIFY':
+            skip_rows = 0
+        else:
+            skip_rows = 3
+
+        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
 
         # Remove unnamed columns (columns without headers)
@@ -491,14 +519,15 @@ class SpreadsheetSubmitter:
                 library_preparation_id=row.get('library_preparation.biomaterial_core.biomaterial_id'),
                 sequencing_protocol_id=row.get('sequencing_protocol.protocol_core.protocol_id'),
                 read_index=row.get('sequence_file.read_index'),
-                run_id=row.get('sequence_file.run_id')
+                run_id=row.get('sequence_file.run_id'),
+                id=row.get('Id')
             )
             for _, row in df_filtered.iterrows()
         ]
 
         return sequencing_files, df_filtered
 
-    def get_cell_lines(self, sheet_name):
+    def get_cell_lines(self, sheet_name, action):
         """
         Retrieves parsed cell lines data from a specified sheet in the Excel file.
 
@@ -514,10 +543,10 @@ class SpreadsheetSubmitter:
         list
             A list of CellLine objects parsed from the specified sheet.
         """
-        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name)
+        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name, action)
         return cell_lines, cell_lines_df
 
-    def get_differentiated_cell_lines(self, sheet_name):
+    def get_differentiated_cell_lines(self, sheet_name, action):
         """
         Retrieves parsed differentiated cell lines data from a specified sheet in the Excel file.
 
@@ -533,7 +562,9 @@ class SpreadsheetSubmitter:
         list
             A list of DifferentiatedCellLine objects parsed from the specified sheet.
         """
-        differentiated_cell_lines, differentiated_cell_lines_df = self.parse_differentiated_cell_lines(sheet_name)
+        differentiated_cell_lines, differentiated_cell_lines_df = (self.
+                                                                   parse_differentiated_cell_lines
+                                                                   (sheet_name, action))
         return differentiated_cell_lines, differentiated_cell_lines_df
 
     def merge_cell_line_and_differentiated_cell_line(self, cell_lines, differentiated_cell_lines):
@@ -635,7 +666,7 @@ class SpreadsheetSubmitter:
                 if sequencing_file.library_preparation_id == library_preparation.biomaterial_id:
                     library_preparation.add_sequencing_file(sequencing_file)
 
-    def get_library_preparations(self, sheet_name):
+    def get_library_preparations(self, sheet_name, action):
         """
         Retrieves parsed library preparations data from a specified sheet in the Excel file.
 
@@ -651,10 +682,10 @@ class SpreadsheetSubmitter:
         list
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
-        library_preparations, df_filtered = self.parse_library_preparations(sheet_name)
+        library_preparations, df_filtered = self.parse_library_preparations(sheet_name, action)
         return library_preparations, df_filtered
 
-    def get_sequencing_files(self, sheet_name):
+    def get_sequencing_files(self, sheet_name, action):
         """
         Retrieves parsed sequencing files data from a specified sheet in the Excel file.
 
@@ -670,5 +701,5 @@ class SpreadsheetSubmitter:
         list
             A list of SequencingFile objects parsed from the specified sheet.
         """
-        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name)
+        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, action)
         return sequencing_files, df_filtered

@@ -6,6 +6,7 @@ from ait.commons.util.aws_client import Aws
 from ait.commons.util.command.list import CmdList
 from ait.commons.util.command.submit import CmdSubmit, get_id_from_url
 from ait.commons.util.user_profile import get_profile
+from ait.commons.util.util.provider_api_util import APIProvider
 from ait.commons.util.util.spreadsheet_util import SpreadsheetSubmitter
 
 
@@ -40,11 +41,7 @@ class CmdSubmitFile:
         self.access_token = get_profile('morphic-util').access_token
         self.user_profile = get_profile('morphic-util')
         self.aws = Aws(self.user_profile)
-
-        if hasattr(self.args, 'file') and self.args.file is not None:
-            self.file = self.args.file
-        else:
-            raise Exception("File is mandatory")
+        self.provider_api = APIProvider(self.base_url)
 
         if hasattr(self.args, 'action') and self.args.action is not None:
             self.action = self.args.action
@@ -59,11 +56,23 @@ class CmdSubmitFile:
                             "dataset using the same option and link your dataset to your study"
                             "before proceeding with this submission.")
 
+        if hasattr(self.args, 'file') and self.args.file is not None:
+            self.file = self.args.file
+        else:
+            if self.action != 'DELETE':
+                raise Exception("File is mandatory")
+            else:
+                print("Deleting dataset " + self.dataset)
+
     def run(self):
         """
         Execute the command file submission process.
         """
         submission_instance = CmdSubmit(self)
+
+        if self.action == 'delete' or self.action == 'DELETE':
+            submission_instance.delete_dataset(self.dataset, self.access_token)
+
         list_instance = CmdList(self.aws, self.args)
 
         list_of_files_in_upload_area = (list_instance.
@@ -85,11 +94,11 @@ class CmdSubmitFile:
                                                                           library_preparations)
             sequencing_files, sequencing_files_df = parser.get_sequencing_files('Sequence file', self.action)
 
-            validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
+            # validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
 
             parser.merge_library_preparation_sequencing_file(library_preparations, sequencing_files)
 
-            if self.action != 'modify' and self.action != 'MODIFY':
+            if self.action == 'add' or self.action == 'ADD':
                 submission_envelope_response = submission_instance.create_new_submission_envelope(
                     self.submission_envelope_create_url,
                     access_token=self.access_token)
@@ -111,6 +120,7 @@ class CmdSubmitFile:
                     library_preparations_df,
                     sequencing_files_df,
                     submission_envelope_id,
+                    self.dataset,
                     self.access_token,
                     self.action
                 )

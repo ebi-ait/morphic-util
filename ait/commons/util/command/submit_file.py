@@ -6,8 +6,8 @@ from ait.commons.util.aws_client import Aws
 from ait.commons.util.command.list import CmdList
 from ait.commons.util.command.submit import CmdSubmit, get_id_from_url
 from ait.commons.util.user_profile import get_profile
-from ait.commons.util.util.provider_api_util import APIProvider
-from ait.commons.util.util.spreadsheet_util import SpreadsheetSubmitter
+from ait.commons.util.provider_api_util import APIProvider
+from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter
 
 
 # Define a class for handling submission of a command file
@@ -79,7 +79,7 @@ class CmdSubmitFile:
         "Unnamed: 5": None  # Adjust index based on your actual column count
     }
 
-    base_url = 'http://localhost:8080'
+    base_url = 'https://api.ingest.dev.archive.morphic.bio/'
     submission_envelope_create_url = f"{base_url}/submissionEnvelopes/updateSubmissions"
     submission_envelope_base_url = f"{base_url}/submissionEnvelopes"
 

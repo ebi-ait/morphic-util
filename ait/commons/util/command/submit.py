@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from urllib.parse import urlparse
 from ait.commons.util.user_profile import get_profile
-from ait.commons.util.util.provider_api_util import APIProvider
+from ait.commons.util.provider_api_util import APIProvider
 
 
 def get_id_from_url(url):
@@ -62,7 +62,7 @@ class CmdSubmit:
         transform(file): Transforms the input file to a JSON object.
         put_to_provider_api(url, access_token): Sends a PUT request to the provider API.
     """
-    base_url = 'http://localhost:8080'
+    base_url = 'https://api.ingest.dev.archive.morphic.bio'
     submission_envelope_create_url = f"{base_url}/submissionEnvelopes/updateSubmissions"
     submission_envelope_base_url = f"{base_url}/submissionEnvelopes"
 

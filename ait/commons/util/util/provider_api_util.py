@@ -43,7 +43,7 @@ class APIProvider:
     # TODO: have a generic delete and also a delete with params
     def delete_to_provider_api(self, url, access_token, delete_linked_entities=False):
         params = {'deleteLinkedEntities': str(delete_linked_entities).lower()}
-        return self.send_request('DELETE', url, access_token, params=params)
+        self.send_request('DELETE', url, access_token, params=params)
 
     def post_to_provider_api(self, url, data_type_in_hal_link, data, access_token):
         return self.send_request('POST', url, access_token, data=data, data_type_in_hal_link=data_type_in_hal_link)

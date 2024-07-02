@@ -253,7 +253,7 @@ class SpreadsheetSubmitter:
         xls = pd.ExcelFile(self.file_path, engine='openpyxl')
         return xls.sheet_names
 
-    def parse_cell_lines(self, sheet_name, action):
+    def parse_cell_lines(self, sheet_name, action, column_mapping):
         """
         Parses data related to cell lines from a specified sheet in the Excel file.
 
@@ -274,13 +274,14 @@ class SpreadsheetSubmitter:
         if action.upper() == 'MODIFY':
             skip_rows = 0
         else:
-            skip_rows = 3
+            skip_rows = 0
 
         df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
+        df = df.rename(columns=column_mapping)
 
         # Remove unnamed columns (columns without headers)
-        df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
+        # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
         if 'cell_line.biomaterial_core.biomaterial_id' not in df.columns:
@@ -288,6 +289,8 @@ class SpreadsheetSubmitter:
 
         # Filter rows where biomaterial_id is not null
         df = df[df['cell_line.biomaterial_core.biomaterial_id'].notna()]
+
+        df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['cell_line.biomaterial_core.biomaterial_id']
@@ -301,7 +304,6 @@ class SpreadsheetSubmitter:
         df_filtered = df[mask]
 
         # Check for mandatory fields and create CellLine objects
-        # TODO: for all
         cell_lines = []
         for _, row in df_filtered.iterrows():
             biomaterial_id = row['cell_line.biomaterial_core.biomaterial_id']
@@ -326,13 +328,13 @@ class SpreadsheetSubmitter:
                     protocol_id=row.get('gene_expression_alteration_protocol.protocol_core.protocol_id'),
                     zygosity=row.get('cell_line.zygosity'),
                     cell_type=cell_type,
-                    id=row.get('Identifier'),
+                    id=row.get('Identifier')
                 )
             )
 
         return cell_lines, df_filtered
 
-    def parse_differentiated_cell_lines(self, sheet_name, action):
+    def parse_differentiated_cell_lines(self, sheet_name, action, column_mapping):
         """
         Parses data related to differentiated cell lines from a specified sheet in the Excel file.
 
@@ -351,13 +353,14 @@ class SpreadsheetSubmitter:
         if action.upper() == 'MODIFY':
             skip_rows = 0
         else:
-            skip_rows = 3
+            skip_rows = 0
 
         df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
+        df = df.rename(columns=column_mapping)
 
         # Remove unnamed columns (columns without headers)
-        df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
+        # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
         if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
@@ -365,6 +368,8 @@ class SpreadsheetSubmitter:
 
         # Filter rows where biomaterial_id is not null
         df = df[df['differentiated_cell_line.biomaterial_core.biomaterial_id'].notna()]
+
+        df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['differentiated_cell_line.biomaterial_core.biomaterial_id']
@@ -377,25 +382,39 @@ class SpreadsheetSubmitter:
         # Apply the mask to filter out rows
         df_filtered = df[mask]
 
-        # Create DifferentiatedCellLine objects from filtered DataFrame rows
-        differentiated_cell_lines = [
-            DifferentiatedCellLine(
-                biomaterial_id=row['differentiated_cell_line.biomaterial_core.biomaterial_id'],
-                description=row.get('differentiated_cell_line.biomaterial_core.biomaterial_description'),
-                input_biomaterial_id=row.get('cell_line.biomaterial_core.biomaterial_id'),
-                protocol_id=row.get('differentiation_protocol.protocol_core.protocol_id'),
-                timepoint_value=row.get('differentiated_cell_line.timepoint_value'),
-                timepoint_unit=row.get('differentiated_cell_line.timepoint_unit.text'),
-                terminally_differentiated=row.get('differentiated_cell_line.terminally_differentiated'),
-                model_system=row.get('differentiated_cell_line.model_organ.text'),
-                id=row.get('Id')
+        # Check for mandatory fields and create Differentiated CellLine objects
+        differentiated_cell_lines = []
+        for _, row in df_filtered.iterrows():
+            differentiated_biomaterial_id = row['differentiated_cell_line.biomaterial_core.biomaterial_id']
+            biomaterial_id = row.get('cell_line.biomaterial_core.biomaterial_id')
+
+            # Check if biomaterial_id is null
+            if pd.isnull(differentiated_biomaterial_id):
+                raise MissingMandatoryFieldError("Differentiated Cell line ID cannot be null.")
+
+            # Check if derived_accession and cell_type are present
+            if pd.isnull(biomaterial_id):
+                raise MissingMandatoryFieldError(
+                    "Input Cell line ID cannot be null. " + differentiated_biomaterial_id)
+
+            # Create DifferentiatedCellLine objects from filtered DataFrame rows
+            differentiated_cell_lines.append(
+                DifferentiatedCellLine(
+                    biomaterial_id=differentiated_biomaterial_id,
+                    description=row.get('differentiated_cell_line.biomaterial_core.biomaterial_description'),
+                    input_biomaterial_id=biomaterial_id,
+                    protocol_id=row.get('differentiation_protocol.protocol_core.protocol_id'),
+                    timepoint_value=row.get('differentiated_cell_line.timepoint_value'),
+                    timepoint_unit=row.get('differentiated_cell_line.timepoint_unit.text'),
+                    terminally_differentiated=row.get('differentiated_cell_line.terminally_differentiated'),
+                    model_system=row.get('differentiated_cell_line.model_organ.text'),
+                    id=row.get('Identifier')
+                )
             )
-            for _, row in df_filtered.iterrows()
-        ]
 
         return differentiated_cell_lines, df_filtered
 
-    def parse_library_preparations(self, sheet_name, action):
+    def parse_library_preparations(self, sheet_name, action, column_mapping):
         """
         Parses data related to library preparations from a specified sheet in the Excel file.
 
@@ -403,8 +422,6 @@ class SpreadsheetSubmitter:
         -----------
         sheet_name : str
             The name of the sheet containing library preparation data.
-        column_mapping : dict
-            A dictionary mapping column names in the sheet to expected attribute names.
 
         Returns:
         --------
@@ -414,22 +431,29 @@ class SpreadsheetSubmitter:
         if action.upper() == 'MODIFY':
             skip_rows = 0
         else:
-            skip_rows = 3
+            skip_rows = 0
 
         df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
+        df = df.rename(columns=column_mapping)
 
         # Remove unnamed columns (columns without headers)
-        df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
+        # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
-        if 'library_preparation.biomaterial_core.biomaterial_id' not in df.columns:
-            raise KeyError("The column 'library_preparation.biomaterial_core.biomaterial_id' "
-                           "does not exist.")
+        required_columns = [
+            'library_preparation.biomaterial_core.biomaterial_id',
+            'dissociation_protocol.protocol_core.protocol_id',
+            'differentiated_cell_line.biomaterial_core.biomaterial_id',
+            'library_preparation_protocol.protocol_core.protocol_id'
+        ]
+        for col in required_columns:
+            if col not in df.columns:
+                raise KeyError(f"The column '{col}' does not exist.")
 
         # Filter rows where biomaterial_id is not null
         df = df[df['library_preparation.biomaterial_core.biomaterial_id'].notna()]
-        # TODO: for all
+
         df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
@@ -443,30 +467,47 @@ class SpreadsheetSubmitter:
         # Apply the mask to filter out rows
         df_filtered = df[mask]
 
-        # Create LibraryPreparation objects from filtered DataFrame rows
-        library_preparations = [
-            LibraryPreparation(
-                biomaterial_id=row['library_preparation.biomaterial_core.biomaterial_id'],
-                protocol_id=row.get('library_preparation_protocol.protocol_core.protocol_id'),
-                dissociation_protocol_id=row.get('dissociation_protocol.protocol_core.protocol_id'),
-                differentiated_biomaterial_id=row.get('differentiated_cell_line.biomaterial_core.biomaterial_id'),
-                average_fragment_size=row.get('library_preparation.average_fragment_size'),
-                input_amount_value=row.get('library_preparation.input_amount_value'),
-                input_amount_unit=row.get('library_preparation.input_amount_unit'),
-                final_yield_value=row.get('library_preparation.final_yield_value'),
-                final_yield_unit=row.get('library_preparation.final_yield_unit'),
-                concentration_value=row.get('library_preparation.concentration_value'),
-                concentration_unit=row.get('library_preparation.concentration_unit'),
-                pcr_cycles=row.get('library_preparation.pcr_cycles'),
-                pcr_cycles_for_sample_index=row.get('library_preparation.pcr_cycles_for_sample_index'),
-                id=row.get('Id')
+        # Check for mandatory fields and create Library Preparation objects
+        library_preparations = []
+        for _, row in df_filtered.iterrows():
+            library_preparation_id = row['library_preparation.biomaterial_core.biomaterial_id']
+            dissociation_protocol_id = row.get('dissociation_protocol.protocol_core.protocol_id')
+            differentiated_biomaterial_id = row.get('differentiated_cell_line.biomaterial_core.biomaterial_id')
+            library_preparation_protocol_id = row.get('library_preparation_protocol.protocol_core.protocol_id')
+
+            # Check if required fields are null
+            if pd.isnull(library_preparation_id):
+                raise MissingMandatoryFieldError("Library Preparation ID cannot be null.")
+            if pd.isnull(dissociation_protocol_id):
+                raise MissingMandatoryFieldError("Dissociation Protocol ID cannot be null.")
+            if pd.isnull(differentiated_biomaterial_id):
+                raise MissingMandatoryFieldError("Differentiated Cell Line ID cannot be null.")
+            if pd.isnull(library_preparation_protocol_id):
+                raise MissingMandatoryFieldError("Library Preparation Protocol ID cannot be null.")
+
+            # Create LibraryPreparation objects from filtered DataFrame rows
+            library_preparations.append(
+                LibraryPreparation(
+                    biomaterial_id=library_preparation_id,
+                    protocol_id=library_preparation_protocol_id,
+                    dissociation_protocol_id=dissociation_protocol_id,
+                    differentiated_biomaterial_id=differentiated_biomaterial_id,
+                    average_fragment_size=row.get('library_preparation.average_fragment_size'),
+                    input_amount_value=row.get('library_preparation.input_amount_value'),
+                    input_amount_unit=row.get('library_preparation.input_amount_unit'),
+                    final_yield_value=row.get('library_preparation.final_yield_value'),
+                    final_yield_unit=row.get('library_preparation.final_yield_unit'),
+                    concentration_value=row.get('library_preparation.concentration_value'),
+                    concentration_unit=row.get('library_preparation.concentration_unit'),
+                    pcr_cycles=row.get('library_preparation.pcr_cycles'),
+                    pcr_cycles_for_sample_index=row.get('library_preparation.pcr_cycles_for_sample_index'),
+                    id=row.get('Identifier')
+                )
             )
-            for _, row in df_filtered.iterrows()
-        ]
 
         return library_preparations, df_filtered
 
-    def parse_sequencing_files(self, sheet_name, action):
+    def parse_sequencing_files(self, sheet_name, action, column_mapping):
         """
         Parses data related to sequencing files from a specified sheet in the Excel file.
 
@@ -474,8 +515,6 @@ class SpreadsheetSubmitter:
         -----------
         sheet_name : str
             The name of the sheet containing sequencing file data.
-        column_mapping : dict
-            A dictionary mapping column names in the sheet to expected attribute names.
 
         Returns:
         --------
@@ -485,20 +524,30 @@ class SpreadsheetSubmitter:
         if action.upper() == 'MODIFY':
             skip_rows = 0
         else:
-            skip_rows = 3
+            skip_rows = 0
 
         df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
+        df = df.rename(columns=column_mapping)
 
         # Remove unnamed columns (columns without headers)
-        df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
+        # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
-        if 'sequence_file.file_core.file_name' not in df.columns:
-            raise KeyError("The column 'sequence_file.file_core.file_name' does not exist.")
+        required_columns = [
+            'sequence_file.file_core.file_name',
+            'library_preparation.biomaterial_core.biomaterial_id',
+            'sequencing_protocol.protocol_core.protocol_id',
+            'sequence_file.read_index'
+        ]
+        for col in required_columns:
+            if col not in df.columns:
+                raise KeyError(f"The column '{col}' does not exist.")
 
         # Filter rows where file_name is not null
         df = df[df['sequence_file.file_core.file_name'].notna()]
+
+        df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['sequence_file.file_core.file_name']
@@ -512,22 +561,39 @@ class SpreadsheetSubmitter:
         # Apply the mask to filter out rows
         df_filtered = df[mask]
 
-        # Create SequencingFile objects from filtered DataFrame rows
-        sequencing_files = [
-            SequencingFile(
-                file_name=row['sequence_file.file_core.file_name'],
-                library_preparation_id=row.get('library_preparation.biomaterial_core.biomaterial_id'),
-                sequencing_protocol_id=row.get('sequencing_protocol.protocol_core.protocol_id'),
-                read_index=row.get('sequence_file.read_index'),
-                run_id=row.get('sequence_file.run_id'),
-                id=row.get('Id')
+        # Check for mandatory fields and create Sequencing file objects
+        sequencing_files = []
+        for _, row in df_filtered.iterrows():
+            file_name = row['sequence_file.file_core.file_name']
+            library_preparation_id = row.get('library_preparation.biomaterial_core.biomaterial_id')
+            sequencing_protocol_id = row.get('sequencing_protocol.protocol_core.protocol_id')
+            read_index = row.get('sequence_file.read_index')
+
+            # Check if required fields are null
+            if pd.isnull(file_name):
+                raise MissingMandatoryFieldError("Sequence file name cannot be null.")
+            if pd.isnull(library_preparation_id):
+                raise MissingMandatoryFieldError("Library Preparation ID cannot be null.")
+            if pd.isnull(sequencing_protocol_id):
+                raise MissingMandatoryFieldError("Sequencing Protocol ID cannot be null.")
+            if pd.isnull(read_index):
+                raise MissingMandatoryFieldError("Read Index cannot be null.")
+
+            # Create SequencingFile objects from filtered DataFrame rows
+            sequencing_files.append(
+                SequencingFile(
+                    file_name=file_name,
+                    library_preparation_id=library_preparation_id,
+                    sequencing_protocol_id=sequencing_protocol_id,
+                    read_index=read_index,
+                    run_id=row.get('sequence_file.run_id'),
+                    id=row.get('Identifier')
+                )
             )
-            for _, row in df_filtered.iterrows()
-        ]
 
         return sequencing_files, df_filtered
 
-    def get_cell_lines(self, sheet_name, action):
+    def get_cell_lines(self, sheet_name, action, column_mapping):
         """
         Retrieves parsed cell lines data from a specified sheet in the Excel file.
 
@@ -543,10 +609,10 @@ class SpreadsheetSubmitter:
         list
             A list of CellLine objects parsed from the specified sheet.
         """
-        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name, action)
+        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name, action, column_mapping)
         return cell_lines, cell_lines_df
 
-    def get_differentiated_cell_lines(self, sheet_name, action):
+    def get_differentiated_cell_lines(self, sheet_name, action, column_mapping):
         """
         Retrieves parsed differentiated cell lines data from a specified sheet in the Excel file.
 
@@ -564,7 +630,8 @@ class SpreadsheetSubmitter:
         """
         differentiated_cell_lines, differentiated_cell_lines_df = (self.
                                                                    parse_differentiated_cell_lines
-                                                                   (sheet_name, action))
+                                                                   (sheet_name, action,
+                                                                    column_mapping))
         return differentiated_cell_lines, differentiated_cell_lines_df
 
     def merge_cell_line_and_differentiated_cell_line(self, cell_lines, differentiated_cell_lines):
@@ -666,7 +733,7 @@ class SpreadsheetSubmitter:
                 if sequencing_file.library_preparation_id == library_preparation.biomaterial_id:
                     library_preparation.add_sequencing_file(sequencing_file)
 
-    def get_library_preparations(self, sheet_name, action):
+    def get_library_preparations(self, sheet_name, action, column_mapping):
         """
         Retrieves parsed library preparations data from a specified sheet in the Excel file.
 
@@ -682,10 +749,10 @@ class SpreadsheetSubmitter:
         list
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
-        library_preparations, df_filtered = self.parse_library_preparations(sheet_name, action)
+        library_preparations, df_filtered = self.parse_library_preparations(sheet_name, action, column_mapping)
         return library_preparations, df_filtered
 
-    def get_sequencing_files(self, sheet_name, action):
+    def get_sequencing_files(self, sheet_name, action, column_mapping):
         """
         Retrieves parsed sequencing files data from a specified sheet in the Excel file.
 
@@ -701,5 +768,5 @@ class SpreadsheetSubmitter:
         list
             A list of SequencingFile objects parsed from the specified sheet.
         """
-        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, action)
+        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, action, column_mapping)
         return sequencing_files, df_filtered

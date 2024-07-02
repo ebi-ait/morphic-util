@@ -290,7 +290,7 @@ class SpreadsheetSubmitter:
         # Filter rows where biomaterial_id is not null
         df = df[df['cell_line.biomaterial_core.biomaterial_id'].notna()]
 
-        df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
+        df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['cell_line.biomaterial_core.biomaterial_id']
@@ -369,7 +369,7 @@ class SpreadsheetSubmitter:
         # Filter rows where biomaterial_id is not null
         df = df[df['differentiated_cell_line.biomaterial_core.biomaterial_id'].notna()]
 
-        df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
+        df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['differentiated_cell_line.biomaterial_core.biomaterial_id']
@@ -454,7 +454,7 @@ class SpreadsheetSubmitter:
         # Filter rows where biomaterial_id is not null
         df = df[df['library_preparation.biomaterial_core.biomaterial_id'].notna()]
 
-        df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
+        df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['library_preparation.biomaterial_core.biomaterial_id']
@@ -547,7 +547,7 @@ class SpreadsheetSubmitter:
         # Filter rows where file_name is not null
         df = df[df['sequence_file.file_core.file_name'].notna()]
 
-        df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
+        df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['sequence_file.file_core.file_name']

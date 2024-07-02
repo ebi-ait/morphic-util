@@ -125,9 +125,11 @@ class CmdSubmit:
 
             self.link_to_dataset('biomaterial', dataset_id, cell_line_entity_id, access_token)
 
+            cell_lines_df[cell_line_entity_id_column_name] = (cell_lines_df[cell_line_entity_id_column_name]
+                                                              .astype(object))
+
             cell_lines_df.loc[
-                cell_lines_df['cell_line.biomaterial_core.biomaterial_id'] ==
-                cell_line.biomaterial_id,
+                cell_lines_df['cell_line.biomaterial_core.biomaterial_id'] == cell_line.biomaterial_id,
                 cell_line_entity_id_column_name
             ] = cell_line_entity_id
 
@@ -217,9 +219,12 @@ class CmdSubmit:
             differentiated_biomaterial_to_entity_id_map[
                 differentiated_cell_line.biomaterial_id] = differentiated_entity_id
 
+            differentiated_cell_lines_df[differentiated_cell_line_entity_id_column_name] = differentiated_cell_lines_df[
+                differentiated_cell_line_entity_id_column_name].astype(object)
+
             differentiated_cell_lines_df.loc[
-                differentiated_cell_lines_df['differentiated_cell_line.biomaterial_core.biomaterial_id'] ==
-                differentiated_cell_line.biomaterial_id,
+                differentiated_cell_lines_df[
+                    'differentiated_cell_line.biomaterial_core.biomaterial_id'] == differentiated_cell_line.biomaterial_id,
                 differentiated_cell_line_entity_id_column_name
             ] = differentiated_entity_id
 
@@ -300,9 +305,9 @@ class CmdSubmit:
             )
 
             library_preparations_df.loc[
-                library_preparations_df['library_preparation.biomaterial_core.biomaterial_id'] ==
-                library_preparation.biomaterial_id,
-                library_preparation_entity_id_column_name,
+                library_preparations_df[
+                    'library_preparation.biomaterial_core.biomaterial_id'] == library_preparation.biomaterial_id,
+                library_preparation_entity_id_column_name
             ] = library_preparation_entity_id
 
             return library_preparation_entity_id
@@ -372,6 +377,9 @@ class CmdSubmit:
                 f"{self.base_url}/files/{sequencing_file_entity_id}/derivedByProcesses",
                 sequencing_process_entity_id, 'processes', access_token
             )
+
+            sequencing_file_df[sequencing_file_entity_id_column_name] = sequencing_file_df[
+                sequencing_file_entity_id_column_name].astype(object)
 
             sequencing_file_df.loc[
                 sequencing_file_df['sequence_file.file_core.file_name'] == sequencing_file.file_name,

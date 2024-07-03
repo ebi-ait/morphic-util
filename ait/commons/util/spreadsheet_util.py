@@ -328,7 +328,7 @@ class SpreadsheetSubmitter:
                     protocol_id=row.get('gene_expression_alteration_protocol.protocol_core.protocol_id'),
                     zygosity=row.get('cell_line.zygosity'),
                     cell_type=cell_type,
-                    id=row.get('Identifier')
+                    id=row.get('Id')
                 )
             )
 
@@ -408,7 +408,7 @@ class SpreadsheetSubmitter:
                     timepoint_unit=row.get('differentiated_cell_line.timepoint_unit.text'),
                     terminally_differentiated=row.get('differentiated_cell_line.terminally_differentiated'),
                     model_system=row.get('differentiated_cell_line.model_organ.text'),
-                    id=row.get('Identifier')
+                    id=row.get('Id')
                 )
             )
 
@@ -501,7 +501,7 @@ class SpreadsheetSubmitter:
                     concentration_unit=row.get('library_preparation.concentration_unit'),
                     pcr_cycles=row.get('library_preparation.pcr_cycles'),
                     pcr_cycles_for_sample_index=row.get('library_preparation.pcr_cycles_for_sample_index'),
-                    id=row.get('Identifier')
+                    id=row.get('Id')
                 )
             )
 
@@ -587,7 +587,7 @@ class SpreadsheetSubmitter:
                     sequencing_protocol_id=sequencing_protocol_id,
                     read_index=read_index,
                     run_id=row.get('sequence_file.run_id'),
-                    id=row.get('Identifier')
+                    id=row.get('Id')
                 )
             )
 

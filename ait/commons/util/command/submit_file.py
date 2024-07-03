@@ -83,39 +83,43 @@ class CmdSubmitFile:
     submission_envelope_create_url = f"{base_url}/submissionEnvelopes/updateSubmissions"
     submission_envelope_base_url = f"{base_url}/submissionEnvelopes"
 
-    def __init__(self, args):
-        """
-        Initialize CmdSubmitFile instance.
+    class CmdSubmitFile:
+        def __init__(self, args):
+            """
+            Initialize CmdSubmitFile instance.
 
-        Args:
-            args: Command-line arguments passed to the script.
-        """
-        self.args = args
-        self.access_token = get_profile('morphic-util').access_token
-        self.user_profile = get_profile('morphic-util')
-        self.aws = Aws(self.user_profile)
-        self.provider_api = APIProvider(self.base_url)
+            Args:
+                args: Command-line arguments passed to the script.
+            """
+            self.args = args
+            self.access_token = get_profile('morphic-util').access_token
+            self.user_profile = get_profile('morphic-util')
+            self.aws = Aws(self.user_profile)
+            self.provider_api = APIProvider(self.base_url)
 
-        if hasattr(self.args, 'action') and self.args.action is not None:
-            self.action = self.args.action
-        else:
-            raise Exception("Submission action (ADD, MODIFY or DELETE) is mandatory")
-
-        if hasattr(self.args, 'dataset') and self.args.dataset is not None:
-            self.dataset = self.args.dataset
-        else:
-            raise Exception("Dataset is mandatory to be registered before submitting dataset metadata, "
-                            "We request you to submit your study using the submit option, register your"
-                            "dataset using the same option and link your dataset to your study"
-                            "before proceeding with this submission.")
-
-        if hasattr(self.args, 'file') and self.args.file is not None:
-            self.file = self.args.file
-        else:
-            if self.action != 'DELETE':
-                raise Exception("File is mandatory")
+            if hasattr(self.args, 'action') and self.args.action is not None:
+                self.action = self.args.action
             else:
-                print("Deleting dataset " + self.dataset)
+                print("Submission action (ADD, MODIFY or DELETE) is mandatory")
+                return
+
+            if hasattr(self.args, 'dataset') and self.args.dataset is not None:
+                self.dataset = self.args.dataset
+            else:
+                print("Dataset is mandatory to be registered before submitting dataset metadata, "
+                      "We request you to submit your study using the submit option, register your"
+                      "dataset using the same option and link your dataset to your study"
+                      "before proceeding with this submission.")
+                return
+
+            if hasattr(self.args, 'file') and self.args.file is not None:
+                self.file = self.args.file
+            else:
+                if self.action != 'DELETE':
+                    print("File is mandatory")
+                    return
+                else:
+                    print("Deleting dataset " + self.dataset)
 
     def run(self):
         """
@@ -153,15 +157,23 @@ class CmdSubmitFile:
             # validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
 
             parser.merge_library_preparation_sequencing_file(library_preparations, sequencing_files)
+            submission_envelope_id = None
 
             if self.action == 'add' or self.action == 'ADD':
-                submission_envelope_response = submission_instance.create_new_submission_envelope(
+                submission_envelope_response, status_code = submission_instance.create_new_submission_envelope(
                     self.submission_envelope_create_url,
                     access_token=self.access_token)
-                self_url = submission_envelope_response['_links']['self']['href']
-                submission_envelope_id = get_id_from_url(self_url)
+                if status_code == 200 or status_code == 201:
+                    self_url = submission_envelope_response['_links']['self']['href']
+                    submission_envelope_id = get_id_from_url(self_url)
 
-                print("Submission envelope for this submission is: " + submission_envelope_id)
+                    print("Submission envelope for this submission is: " + submission_envelope_id)
+                else:
+                    if status_code == 401:
+                        message = "Unauthorized, refresh your tokens using the config option"
+                        return False, message
+                    else:
+                        return False, "Encountered failure with " + status_code
             else:
                 submission_envelope_id = None
 

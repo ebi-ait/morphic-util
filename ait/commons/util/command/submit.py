@@ -107,7 +107,7 @@ class CmdSubmit:
             if success:
                 print(f"Updated cell line: {cell_line.id} / {cell_line.biomaterial_id}")
         else:
-            cell_line_entity_id_column_name = "Identifier"
+            cell_line_entity_id_column_name = "Id"
 
             if cell_line_entity_id_column_name not in cell_lines_df.columns:
                 cell_lines_df[cell_line_entity_id_column_name] = np.nan
@@ -168,7 +168,7 @@ class CmdSubmit:
                                                                     submission_envelope_id)
 
             differentiated_biomaterial_to_entity_id_map = {}
-            differentiated_cell_line_entity_id_column_name = "Identifier"
+            differentiated_cell_line_entity_id_column_name = "Id"
 
             if differentiated_cell_line_entity_id_column_name not in differentiated_cell_lines_df.columns:
                 differentiated_cell_lines_df[differentiated_cell_line_entity_id_column_name] = np.nan
@@ -289,7 +289,7 @@ class CmdSubmit:
                                                                         get_process_content('library_preparation'),
                                                                         submission_envelope_id)
 
-            library_preparation_entity_id_column_name = "Identifier"
+            library_preparation_entity_id_column_name = "Id"
 
             self.perform_hal_linkage(
                 f"{self.base_url}/biomaterials/{differentiated_entity_id}/inputToProcesses",
@@ -340,7 +340,7 @@ class CmdSubmit:
                                                                get_process_content('sequencing'),
                                                                submission_envelope_id)
 
-            sequencing_file_entity_id_column_name = "Identifier"
+            sequencing_file_entity_id_column_name = "Id"
 
             if sequencing_file_entity_id_column_name not in sequencing_file_df.columns:
                 sequencing_file_df[sequencing_file_entity_id_column_name] = np.nan
@@ -784,9 +784,13 @@ class CmdSubmit:
         }
 
         response = requests.post(url, headers=headers, json={})
-        response_data = response.json()
+        status_code = response.status_code
 
-        return response_data
+        if status_code == 200 or status_code == 201:
+            response_data = response.json()
+            return response_data, response.status_code
+        else:
+            return None, status_code
 
     def perform_hal_linkage(self, url, input_id, link_to, access_token):
         """

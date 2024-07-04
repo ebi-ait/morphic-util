@@ -867,8 +867,46 @@ class CmdSubmit:
 
     def delete_dataset(self, dataset, access_token):
         # delete_to_provider_api(self.base_url + '/' + dataset, access_token)
+        """
+        self.provider_api.delete_to_provider_api_including_linked_entities(
+            self.base_url + '/' + 'datasets' + '/' + dataset,
+            access_token, True)
+        """
 
-        self.provider_api.delete_to_provider_api(self.base_url + '/' + 'datasets' + '/' + dataset,
-                                                 access_token, True)
+        # Fetch the dataset from the provider API
+        fetched_dataset = self.provider_api.get_to_provider_api(self.base_url + '/' + 'datasets' + '/' + dataset,
+                                                                access_token)
+        print(f"Dataset fetched successfully {dataset}")
+        print(f"Initiating delete of {dataset}")
 
-        print(f"Dataset deleted successfully {dataset}")
+        # Extract lists of biomaterials, processes, and data files from the dataset
+        biomaterials = fetched_dataset.get('biomaterials', [])
+        processes = fetched_dataset.get('processes', [])
+        data_files = fetched_dataset.get('dataFiles', [])
+
+        # Print a message indicating deletion of biomaterials
+        print("Deleting Biomaterials:")
+
+        # Iterate over biomaterials and delete each one
+        for biomaterial in biomaterials:
+            print(f"Deleting {biomaterial}")
+            self.provider_api.delete_to_provider_api(self.base_url + '/' + 'biomaterials' + '/' + biomaterial,
+                                                     access_token)
+
+        # Print a message indicating deletion of processes
+        print("\nDeleting Processes:")
+        # Iterate over processes and delete each one
+        for process in processes:
+            print(f"Deleting {process}")
+            self.provider_api.delete_to_provider_api(self.base_url + '/' + 'processes' + '/' + process, access_token)
+
+        # Print a message indicating deletion of data files
+        print("\nDeleting Data Files:")
+        # Iterate over data files and delete each one
+        for data_file in data_files:
+            print(f"Deleting {data_file}")
+            self.provider_api.delete_to_provider_api(self.base_url + '/' + 'files' + '/' + data_file, access_token)
+
+        print(f"\nDeleting the dataset: {dataset}")
+
+        self.provider_api.delete_to_provider_api(self.base_url + '/' + 'datasets' + '/' + dataset, access_token)

@@ -1,6 +1,6 @@
 # morphic-util
 
-CLI tool for uploading data to the Morphic AWS S3 buckets.
+CLI tool for submitting analysis data and metadata
 
 # Users
 
@@ -9,8 +9,8 @@ CLI tool for uploading data to the Morphic AWS S3 buckets.
 Users need to have
 
 1. Basic command-line knowledge
-2. Python3.x installed on their machine
-3. AWS Cognito username and password
+2. Python 3.10 installed on their machine
+3. AWS Cognito username or email and password
 
 ## Install
 
@@ -35,8 +35,10 @@ optional arguments:
   --version, -v         show program's version number and exit
 
 command:
-  {config,create,select,list,upload,download,delete}
+  {config,submit,submit-file,create,select,list,upload,download,delete}
     config              configure AWS credentials
+    submit              submit your study, dataset or biomaterials metadata (incomplete as all metadata types is not supported yet, expected to be completed on August 2024)
+    submit-file         submit your metadata file containing your cell lines, differentiated cell lines, library preparations and sequencing files
     create              create an upload area (authorised users only)
     select              select or show the active upload area
     list                list contents of the area
@@ -79,18 +81,40 @@ positional arguments:
   password         AWS Cognito password
 ```
 
-The tool uses the profile name _hca-util_ in local AWS config files.
+The tool uses the profile name _morphic-util_ in local AWS config files.
+
+## `submit` command
+Submit your study and dataset metadata and create your AWS upload area for uploading data files
+
+```shell script
+positional arguments:
+$ morphic-util submit --type <TYPE> --file <PATH_TO_FILE>
+
+  --type         type of metadata being submitted (e.g. study or dataset)
+  --file         path to the file containing the metadata
+```
+
+## `submit-file` command
+Submit your study and dataset metadata and create your AWS upload area for uploading data files
+
+```shell script
+positional arguments:
+$ morphic-util submit-file --file <PATH_TO_FILE> --action <SUBMISSION_ACTION> --dataset <the analyis which has generated the data and the metadata>
+
+  --file         path to the file containing the metadata
+  --action       ADD, MODIFY or DELETE based on the type of submission
+  --dataset      the identifier for the analysis
+```
 
 ## `create` command
 
 Create an upload area/ project folder **(authorised users only)**
 
 ```shell script
-$ morphic-util create NAME DPC [-p {u,ud,ux,udx}]
+$ morphic-util create NAME [-p {u,ud,ux,udx}]
 
 positional arguments:
   NAME               name for the new area/ project folder
-  DPC                center name of the submitter
 
 optional arguments:
   -p {u,ud,ux,udx}   allowed actions (permissions) on new area. u for

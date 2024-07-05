@@ -33,9 +33,9 @@ LOCAL_STATE_FILE = USER_HOME + '/.hca-util'
 
 # Cognito and IAM
 COGNITO_MORPHIC_UTIL_ADMIN = 'morphic-dev-admin'
-COGNITO_CLIENT_ID = '178j951qnfuheicm2m5rqqvg6q'
+COGNITO_CLIENT_ID = '1rfis94rvnden5elmocospd256'
 COGNITO_IDENTITY_POOL_ID = 'eu-west-2:d6531e9c-020d-4ee8-bf3b-255393c500e9'
-COGNITO_USER_POOL_ID = 'eu-west-2_b4EyaLNCM'
+COGNITO_USER_POOL_ID = 'eu-west-2_Aqtqtg7u7'
 IAM_USER = 'morphic-dev-admin'
 
 AWS_SECRET_NAME_AK_BUCKET = 'AK-bucket'

@@ -155,7 +155,7 @@ class CmdSubmitFile:
                 'Sequence file', self.action, self.sequencing_file_column_mapping
             )
 
-            # validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
+            validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
 
             parser.merge_library_preparation_sequencing_file(library_preparations, sequencing_files)
             submission_envelope_id = None

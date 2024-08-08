@@ -9,7 +9,7 @@ class MissingMandatoryFieldError(Exception):
         super().__init__(self.message)
 
 
-class MissingEntityError(Exception):
+class MissingParentEntityError(Exception):
     """Custom exception raised when an expected entity is missing."""
 
     def __init__(self, missing_type, entity_type, missing_id):
@@ -17,6 +17,13 @@ class MissingEntityError(Exception):
         self.entity_type = entity_type
         self.missing_type = missing_type
         self.missing_id = missing_id
+
+
+class OrphanedEntityError(Exception):
+    def __init__(self, type, id):
+        super().__init__(f"Orphaned entity {type} and ID is {id}")
+        self.type = type
+        self.id = id
 
 
 class CellLine:
@@ -253,7 +260,7 @@ class SpreadsheetSubmitter:
         xls = pd.ExcelFile(self.file_path, engine='openpyxl')
         return xls.sheet_names
 
-    def parse_cell_lines(self, sheet_name, action, column_mapping):
+    def parse_cell_lines(self, sheet_name, action, errors):
         """
         Parses data related to cell lines from a specified sheet in the Excel file.
 
@@ -274,11 +281,11 @@ class SpreadsheetSubmitter:
         if action.upper() == 'MODIFY':
             skip_rows = 0
         else:
-            skip_rows = 0
+            skip_rows = 3
 
         df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
-        df = df.rename(columns=column_mapping)
+        # df = df.rename(columns=column_mapping)
 
         # Remove unnamed columns (columns without headers)
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
@@ -312,12 +319,15 @@ class SpreadsheetSubmitter:
 
             # Check if biomaterial_id is null
             if pd.isnull(biomaterial_id):
+                errors.append("Biomaterial ID cannot be null.")
                 raise MissingMandatoryFieldError("Biomaterial ID cannot be null.")
 
             # Check if derived_accession and cell_type are present
             if pd.isnull(derived_accession) or pd.isnull(cell_type):
+                errors.append(f"Mandatory fields (derived_accession, cell_type) are required. {biomaterial_id}")
+
                 raise MissingMandatoryFieldError(
-                    "Mandatory fields (derived_accession, cell_type) are required. " + biomaterial_id)
+                    f"Mandatory fields (derived_accession, cell_type) are required. {biomaterial_id}")
 
             cell_lines.append(
                 CellLine(
@@ -334,7 +344,7 @@ class SpreadsheetSubmitter:
 
         return cell_lines, df_filtered
 
-    def parse_differentiated_cell_lines(self, sheet_name, action, column_mapping):
+    def parse_differentiated_cell_lines(self, sheet_name, action):
         """
         Parses data related to differentiated cell lines from a specified sheet in the Excel file.
 
@@ -353,11 +363,11 @@ class SpreadsheetSubmitter:
         if action.upper() == 'MODIFY':
             skip_rows = 0
         else:
-            skip_rows = 0
+            skip_rows = 3
 
         df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
-        df = df.rename(columns=column_mapping)
+        # df = df.rename(columns=column_mapping)
 
         # Remove unnamed columns (columns without headers)
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
@@ -414,7 +424,7 @@ class SpreadsheetSubmitter:
 
         return differentiated_cell_lines, df_filtered
 
-    def parse_library_preparations(self, sheet_name, action, column_mapping):
+    def parse_library_preparations(self, sheet_name, action):
         """
         Parses data related to library preparations from a specified sheet in the Excel file.
 
@@ -431,11 +441,11 @@ class SpreadsheetSubmitter:
         if action.upper() == 'MODIFY':
             skip_rows = 0
         else:
-            skip_rows = 0
+            skip_rows = 3
 
         df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
-        df = df.rename(columns=column_mapping)
+        # df = df.rename(columns=column_mapping)
 
         # Remove unnamed columns (columns without headers)
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
@@ -507,7 +517,7 @@ class SpreadsheetSubmitter:
 
         return library_preparations, df_filtered
 
-    def parse_sequencing_files(self, sheet_name, action, column_mapping):
+    def parse_sequencing_files(self, sheet_name, action):
         """
         Parses data related to sequencing files from a specified sheet in the Excel file.
 
@@ -524,11 +534,11 @@ class SpreadsheetSubmitter:
         if action.upper() == 'MODIFY':
             skip_rows = 0
         else:
-            skip_rows = 0
+            skip_rows = 3
 
         df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
-        df = df.rename(columns=column_mapping)
+        # df = df.rename(columns=column_mapping)
 
         # Remove unnamed columns (columns without headers)
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
@@ -593,7 +603,7 @@ class SpreadsheetSubmitter:
 
         return sequencing_files, df_filtered
 
-    def get_cell_lines(self, sheet_name, action, column_mapping):
+    def get_cell_lines(self, sheet_name, action, errors):
         """
         Retrieves parsed cell lines data from a specified sheet in the Excel file.
 
@@ -609,10 +619,10 @@ class SpreadsheetSubmitter:
         list
             A list of CellLine objects parsed from the specified sheet.
         """
-        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name, action, column_mapping)
+        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name, action, errors)
         return cell_lines, cell_lines_df
 
-    def get_differentiated_cell_lines(self, sheet_name, action, column_mapping):
+    def get_differentiated_cell_lines(self, sheet_name, action):
         """
         Retrieves parsed differentiated cell lines data from a specified sheet in the Excel file.
 
@@ -630,11 +640,11 @@ class SpreadsheetSubmitter:
         """
         differentiated_cell_lines, differentiated_cell_lines_df = (self.
                                                                    parse_differentiated_cell_lines
-                                                                   (sheet_name, action,
-                                                                    column_mapping))
+                                                                   (sheet_name, action))
         return differentiated_cell_lines, differentiated_cell_lines_df
 
-    def merge_cell_line_and_differentiated_cell_line(self, cell_lines, differentiated_cell_lines):
+    def merge_cell_line_and_differentiated_cell_line(self, cell_lines,
+                                                     differentiated_cell_lines, errors):
         """
         Merges cell lines and differentiated cell lines based on their biomaterial IDs.
 
@@ -654,13 +664,24 @@ class SpreadsheetSubmitter:
         MissingEntityError:
             If a differentiated cell line does not have a corresponding cell line.
         """
+
+        self.find_orphans(
+            source_entities=cell_lines,
+            target_entities=differentiated_cell_lines,
+            source_attr="biomaterial_id",
+            target_attr="input_biomaterial_id",
+            source_type="Cell line",
+            target_type="Differentiated Cell line",
+            errors=errors
+        )
+
         cell_line_ids = {cell_line.biomaterial_id for cell_line in cell_lines}
 
         for differentiated_cell_line in differentiated_cell_lines:
             if differentiated_cell_line.input_biomaterial_id not in cell_line_ids:
-                raise MissingEntityError("Cell Line",
-                                         "Differentiated cell line",
-                                         differentiated_cell_line.biomaterial_id)
+                raise MissingParentEntityError("Cell Line",
+                                               "Differentiated cell line",
+                                               differentiated_cell_line.biomaterial_id)
 
         for cell_line in cell_lines:
             for differentiated_cell_line in differentiated_cell_lines:
@@ -687,13 +708,24 @@ class SpreadsheetSubmitter:
         MissingEntityError:
             If a library preparation does not have a corresponding differentiated cell line.
         """
+
+        self.find_orphans(
+            source_entities=differentiated_cell_lines,
+            target_entities=library_preparations,
+            source_attr="biomaterial_id",
+            target_attr="differentiated_biomaterial_id",
+            source_type="Differentiated Cell line",
+            target_type="Library Preparation",
+            errors=[]
+        )
+
         differentiated_ids = {diff_cell.biomaterial_id for diff_cell in differentiated_cell_lines}
 
         for library_preparation in library_preparations:
             if library_preparation.differentiated_biomaterial_id not in differentiated_ids:
-                raise MissingEntityError("Differentiated Cell Line",
-                                         "Library preparation",
-                                         library_preparation.biomaterial_id)
+                raise MissingParentEntityError("Differentiated Cell Line",
+                                               "Library preparation",
+                                               library_preparation.biomaterial_id)
 
         for differentiated_cell_line in differentiated_cell_lines:
             for library_preparation in library_preparations:
@@ -720,20 +752,60 @@ class SpreadsheetSubmitter:
         MissingEntityError:
             If a sequencing file does not have a corresponding library preparation.
         """
+        self.find_orphans(
+            source_entities=library_preparations,
+            target_entities=sequencing_files,
+            source_attr="biomaterial_id",  # Assuming this is the correct attribute
+            target_attr="library_preparation_id",
+            source_type="Library Preparation",
+            target_type="Sequencing File",
+            errors=[]
+        )
+
         library_ids = {lib_prep.biomaterial_id for lib_prep in library_preparations}
 
         for sequencing_file in sequencing_files:
             if sequencing_file.library_preparation_id not in library_ids:
-                raise MissingEntityError("Library preparation",
-                                         "Sequencing file",
-                                         sequencing_file.file_name)
+                raise MissingParentEntityError("Library preparation",
+                                               "Sequencing file",
+                                               sequencing_file.file_name)
 
         for library_preparation in library_preparations:
             for sequencing_file in sequencing_files:
                 if sequencing_file.library_preparation_id == library_preparation.biomaterial_id:
                     library_preparation.add_sequencing_file(sequencing_file)
 
-    def get_library_preparations(self, sheet_name, action, column_mapping):
+    def find_orphans(self, source_entities, target_entities,
+                     source_attr, target_attr, source_type, target_type, errors):
+        """
+        Validates that each source entity has a corresponding target entity.
+
+        Parameters:
+            source_entities (list): The list of source entities.
+            target_entities (list): The list of target entities.
+            source_attr (str): The attribute name in the source entity to compare.
+            target_attr (str): The attribute name in the target entity to compare.
+            source_type (str): The type name of the source entity (for error messages).
+            target_type (str): The type name of the target entity (for error messages).
+
+        Raises:
+            OrphanedEntityError: If a source entity doesn't have a corresponding target entity.
+        """
+        for source_entity in source_entities:
+            match_found = False
+
+            for target_entity in target_entities:
+                if getattr(target_entity, target_attr) == getattr(source_entity, source_attr):
+                    match_found = True
+                    break
+
+            if not match_found:
+                errors.append(source_type + getattr(source_entity, source_attr))
+                raise OrphanedEntityError(source_type, getattr(source_entity, source_attr))
+
+        print(f"VALIDATED: All {source_type.lower()}s have corresponding {target_type.lower()}s.")
+
+    def get_library_preparations(self, sheet_name, action):
         """
         Retrieves parsed library preparations data from a specified sheet in the Excel file.
 
@@ -749,10 +821,11 @@ class SpreadsheetSubmitter:
         list
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
-        library_preparations, df_filtered = self.parse_library_preparations(sheet_name, action, column_mapping)
+        library_preparations, df_filtered = self.parse_library_preparations(sheet_name,
+                                                                            action)
         return library_preparations, df_filtered
 
-    def get_sequencing_files(self, sheet_name, action, column_mapping):
+    def get_sequencing_files(self, sheet_name, action):
         """
         Retrieves parsed sequencing files data from a specified sheet in the Excel file.
 
@@ -768,5 +841,5 @@ class SpreadsheetSubmitter:
         list
             A list of SequencingFile objects parsed from the specified sheet.
         """
-        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, action, column_mapping)
+        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, action)
         return sequencing_files, df_filtered

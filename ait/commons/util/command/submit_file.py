@@ -26,59 +26,6 @@ def validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, da
 
 
 class CmdSubmitFile:
-    # Column mappings for parsing different sections of the spreadsheet
-    cellline_column_mapping = {
-        "CELL LINE ID (Required)": "cell_line.biomaterial_core.biomaterial_id",
-        "CELL LINE DESCRIPTION": "cell_line.biomaterial_core.biomaterial_description",
-        "DERIVED FROM CELL LINE NAME (Required)": "cell_line.derived_cell_line_accession",
-        "CLONE ID": "cell_line.clone_id",
-        "GENE EXPRESSION ALTERATION PROTOCOL ID": "gene_expression_alteration_protocol.protocol_core.protocol_id",
-        "ZYGOSITY": "cell_line.zygosity",
-        "CELL LINE TYPE (Required)": "cell_line.type",
-        "Unnamed: 7": None,
-        "Unnamed: 8": None
-    }
-
-    differentiated_cellline_column_mapping = {
-        "DIFFERENTIATED CELL LINE ID (Required)": "differentiated_cell_line.biomaterial_core.biomaterial_id",
-        "DIFFERENTIATED CELL LINE DESCRIPTION": "differentiated_cell_line.biomaterial_core.biomaterial_description",
-        "INPUT CELL LINE ID (Required)": "cell_line.biomaterial_core.biomaterial_id",
-        "DIFFERENTIATION PROTOCOL ID (Required)": "differentiation_protocol.protocol_core.protocol_id",
-        "TIMEPOINT VALUE": "differentiated_cell_line.timepoint_value",
-        "TIMEPOINT UNIT": "differentiated_cell_line.timepoint_unit.text",
-        "TERMINALLY DIFFERENTIATED": "differentiated_cell_line.terminally_differentiated",
-        "FINAL LINEAGE STAGE": "differentiated_cell_line.terminally_differentiated",
-        "Model System": "cell_line.model_organ.text",
-        "MODEL SYSTEM": "cell_line.model_organ.text",
-        "Unnamed: 8": None
-    }
-
-    library_preparation_column_mapping = {
-        "LIBRARY PREPARATION ID (Required)": "library_preparation.biomaterial_core.biomaterial_id",
-        "LIBRARY PREPARATION PROTOCOL ID (Required)": "library_preparation_protocol.protocol_core.protocol_id",
-        "DISSOCIATION PROTOCOL ID (Required)": "dissociation_protocol.protocol_core.protocol_id",
-        "DIFFERENTIATED CELL LINE ID (Required)": "differentiated_cell_line.biomaterial_core.biomaterial_id",
-        "LIBRARY AVERAGE FRAGMENT SIZE": "library_preparation.average_fragment_size",
-        "LIBRARY INPUT AMOUNT VALUE": "library_preparation.input_amount_value",
-        "LIBRARY INPUT AMOUNT UNIT": "library_preparation.input_amount_unit",
-        "LIBRARY FINAL YIELD VALUE": "library_preparation.final_yield_value",
-        "LIBRARY FINAL YIELD UNIT": "library_preparation.final_yield_unit",
-        "LIBRARY CONCENTRATION VALUE": "library_preparation.concentration_value",
-        "LIBRARY CONCENTRATION UNIT": "library_preparation.concentration_unit",
-        "LIBRARY PCR CYCLES": "library_preparation.pcr_cycles",
-        "LIBRARY PCR CYCLES FOR SAMPLE INDEX": "library_preparation.pcr_cycles_for_sample_index",
-        "Unnamed: 14": None  # Adjust index based on your actual column count
-    }
-
-    sequencing_file_column_mapping = {
-        "FILE NAME (Required)": "sequence_file.file_core.file_name",
-        "INPUT LIBRARY PREPARATION ID (Required)": "library_preparation.biomaterial_core.biomaterial_id",
-        "SEQUENCING PROTOCOL ID (Required)": "sequencing_protocol.protocol_core.protocol_id",
-        "READ INDEX (Required)": "sequence_file.read_index",
-        "RUN ID": "sequence_file.run_id",
-        "Unnamed: 5": None  # Adjust index based on your actual column count
-    }
-
     base_url = 'https://api.ingest.dev.archive.morphic.bio'
     submission_envelope_create_url = f"{base_url}/submissionEnvelopes/updateSubmissions"
     submission_envelope_base_url = f"{base_url}/submissionEnvelopes"
@@ -95,6 +42,7 @@ class CmdSubmitFile:
         self.user_profile = get_profile('morphic-util')
         self.aws = Aws(self.user_profile)
         self.provider_api = APIProvider(self.base_url)
+        self.errors = []
 
         if hasattr(self.args, 'action') and self.args.action is not None:
             self.action = self.args.action
@@ -141,21 +89,18 @@ class CmdSubmitFile:
             parser = SpreadsheetSubmitter(self.file)
 
             # Parse different sections of the spreadsheet using defined column mappings
-            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line', self.action, self.cellline_column_mapping)
+            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line', self.action, self.errors)
             differentiated_cell_lines, differentiated_cell_lines_df = parser.get_differentiated_cell_lines(
-                'Differentiated cell line', self.action, self.differentiated_cellline_column_mapping
-            )
-            parser.merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines)
+                'Differentiated cell line', self.action)
+            parser.merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines, self.errors)
             library_preparations, library_preparations_df = parser.get_library_preparations(
-                'Library preparation', self.action, self.library_preparation_column_mapping
-            )
+                'Library preparation', self.action)
             parser.merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
                                                                           library_preparations)
             sequencing_files, sequencing_files_df = parser.get_sequencing_files(
-                'Sequence file', self.action, self.sequencing_file_column_mapping
-            )
+                'Sequence file', self.action)
 
-            validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
+            # validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
 
             parser.merge_library_preparation_sequencing_file(library_preparations, sequencing_files)
             submission_envelope_id = None
@@ -170,7 +115,7 @@ class CmdSubmitFile:
                     print(f"Submission envelope for this submission is: {submission_envelope_id}")
                 else:
                     if status_code == 401:
-                        message = "Unauthorized, refresh your tokens using the config option"
+                        message = "Unauthorized, refresh your access token using the config option"
                         return False, message
                     else:
                         return False, f"Encountered failure with {status_code}"

@@ -492,39 +492,21 @@ class CmdSubmit:
             tuple: A tuple containing a boolean indicating success and the ID of the created entity.
         """
         if type in ['study', 'dataset', 'biomaterial', 'process', 'file']:
-            if file is not None:
-                data = self.transform(file)
-            else:
-                data = {}
+            data = self.transform(file) if file is not None else {}
 
             entity_id = self.create_new_envelope_and_submit_entity(type, data, access_token)
 
-            if entity_id is not None:
+            if entity_id:
                 if type == 'dataset':
-                    if self.args.study is not None:
-                        study_id = self.args.study
-                        self.link_dataset_to_study(entity_id, study_id, access_token)
-                    else:
-                        link_to_study = input("Do you want to link this dataset to a study? "
-                                              "(yes/no): ").lower()
-                        if link_to_study == 'yes':
-                            study_id = input("Input study id: ").lower()
-                            self.link_dataset_to_study(entity_id, study_id, access_token)
+                    study_id = self.args.study or input("Input study id to link this dataset: ").lower()
+                    self.link_dataset_to_study(entity_id, study_id, access_token)
 
                 elif type == 'biomaterial':
-                    if self.args.dataset is not None:
-                        dataset_id = self.args.dataset
-                        self.link_biomaterial_to_dataset(entity_id, dataset_id, access_token)
-                    else:
-                        link_to_dataset = input("Do you want to link this biomaterial to a "
-                                                "dataset? (yes/no): ").lower()
-                        if link_to_dataset == 'yes':
-                            dataset_id = input("Input dataset id: ").lower()
-                            self.link_biomaterial_to_dataset(entity_id, dataset_id, access_token)
+                    dataset_id = self.args.dataset or input("Input dataset id to link this biomaterial: ").lower()
+                    self.link_biomaterial_to_dataset(entity_id, dataset_id, access_token)
 
-                    # Linking biomaterial to process
-                    if self.args.process is not None:
-                        process_id = self.args.process
+                    process_id = self.args.process
+                    if process_id:
                         self.link_biomaterial_to_process(entity_id, process_id, access_token)
 
                 return True, entity_id
@@ -537,29 +519,27 @@ class CmdSubmit:
         Creates and submits a new entity (study, dataset, biomaterial, or process) and returns its ID.
 
         Parameters:
-            input_entity_type (str): The type of entity to create ('study', 'dataset',
-            'biomaterial', 'process').
+            input_entity_type (str): The type of entity to create ('study', 'dataset', 'biomaterial', 'process').
             data (dict): The data to be submitted.
             access_token (str): Access token for authorization.
 
         Returns:
             str: The ID of the created entity.
         """
-        if input_entity_type == 'study':
-            halEntity = 'studies'
-        elif input_entity_type == 'dataset':
-            halEntity = 'datasets'
-        elif input_entity_type == 'biomaterial':
-            halEntity = 'biomaterials'
-        elif input_entity_type == 'process':
-            halEntity = 'processes'
+        entity_map = {
+            'study': 'studies',
+            'dataset': 'datasets',
+            'biomaterial': 'biomaterials',
+            'process': 'processes'
+        }
+        hal_entity = entity_map.get(input_entity_type)
 
-        entity_create_url_from_sub_env_hal_links = (self.
-                                                    post_to_provider_api(self.submission_envelope_create_url,
-                                                                         halEntity, None,
-                                                                         access_token))
-        entity_self_hal_link = self.post_to_provider_api(entity_create_url_from_sub_env_hal_links,
-                                                         'self', data, access_token)
+        if not hal_entity:
+            return None
+
+        entity_create_url = self.post_to_provider_api(self.submission_envelope_create_url, hal_entity, None,
+                                                      access_token)
+        entity_self_hal_link = self.post_to_provider_api(entity_create_url, 'self', data, access_token)
         entity_id = get_id_from_url(entity_self_hal_link)
 
         print(f"{input_entity_type.capitalize()} created successfully: {entity_id}")
@@ -567,31 +547,33 @@ class CmdSubmit:
         return entity_id
 
     def patchEntity(self, input_entity_type, id, data, access_token):
-        if input_entity_type == 'study':
-            halEntity = 'studies'
-        elif input_entity_type == 'dataset':
-            halEntity = 'datasets'
-        elif input_entity_type == 'biomaterial':
-            halEntity = 'biomaterials'
-        elif input_entity_type == 'process':
-            halEntity = 'processes'
-        elif input_entity_type == 'file':
-            halEntity = 'files'
+        entity_map = {
+            'study': 'studies',
+            'dataset': 'datasets',
+            'biomaterial': 'biomaterials',
+            'process': 'processes',
+            'file': 'files'
+        }
+        hal_entity = entity_map.get(input_entity_type)
 
-        entity_patch_url = self.base_url + '/' + halEntity + '/' + id
+        if not hal_entity:
+            return False
 
+        entity_patch_url = f"{self.base_url}/{hal_entity}/{id}"
         return self.patch_to_provider_api(entity_patch_url, data, access_token)
 
     def link_to_dataset(self, input_entity_type, dataset_id, entity_id, access_token):
-        if input_entity_type == 'biomaterial':
-            halEntity = 'biomaterials'
-        elif input_entity_type == 'process':
-            halEntity = 'processes'
-        elif input_entity_type == 'file':
-            halEntity = 'files'
+        entity_map = {
+            'biomaterial': 'biomaterials',
+            'process': 'processes',
+            'file': 'files'
+        }
+        hal_entity = entity_map.get(input_entity_type)
 
-        put_url = self.base_url + '/' + 'datasets' + '/' + dataset_id + '/' + halEntity + '/' + entity_id
+        if not hal_entity:
+            return False
 
+        put_url = f"{self.base_url}/datasets/{dataset_id}/{hal_entity}/{entity_id}"
         return self.provider_api.put_to_provider_api(put_url, access_token)
 
     def patch_to_provider_api(self, entity_patch_url, data, access_token):
@@ -601,19 +583,14 @@ class CmdSubmit:
         }
 
         response = requests.patch(entity_patch_url, headers=headers, json=data)
+        return response.status_code // 100 == 2
 
-        if response.status_code // 100 == 2:
-            return True
-        return False
-
-    def use_existing_envelope_and_submit_entity(self, input_entity_type, data,
-                                                submission_envelope_id, access_token):
+    def use_existing_envelope_and_submit_entity(self, input_entity_type, data, submission_envelope_id, access_token):
         """
         Submits an entity using an existing submission envelope and returns its ID.
 
         Parameters:
-            input_entity_type (str): The type of entity to create ('study',
-            'dataset', 'biomaterial', 'process').
+            input_entity_type (str): The type of entity to create ('study', 'dataset', 'biomaterial', 'process').
             data (dict): The data to be submitted.
             submission_envelope_id (str): ID of the submission envelope.
             access_token (str): Access token for authorization.
@@ -621,22 +598,20 @@ class CmdSubmit:
         Returns:
             str: The ID of the created entity.
         """
-        if input_entity_type == 'study':
-            halEntity = 'studies'
-        elif input_entity_type == 'dataset':
-            halEntity = 'datasets'
-        elif input_entity_type == 'biomaterial':
-            halEntity = 'biomaterials'
-        elif input_entity_type == 'process':
-            halEntity = 'processes'
-        elif input_entity_type == 'file':
-            halEntity = 'files'
+        entity_map = {
+            'study': 'studies',
+            'dataset': 'datasets',
+            'biomaterial': 'biomaterials',
+            'process': 'processes',
+            'file': 'files'
+        }
+        hal_entity = entity_map.get(input_entity_type)
 
-        entity_create_url_from_sub_env_hal_links = (self.submission_envelope_base_url
-                                                    + "/" + submission_envelope_id
-                                                    + "/" + halEntity)
-        entity_self_hal_link = self.post_to_provider_api(entity_create_url_from_sub_env_hal_links,
-                                                         'self', data, access_token)
+        if not hal_entity:
+            return None
+
+        entity_create_url = f"{self.submission_envelope_base_url}/{submission_envelope_id}/{hal_entity}"
+        entity_self_hal_link = self.post_to_provider_api(entity_create_url, 'self', data, access_token)
         entity_id = get_id_from_url(entity_self_hal_link)
 
         print(f"{input_entity_type.capitalize()} created successfully: {entity_id}")
@@ -654,9 +629,8 @@ class CmdSubmit:
         """
         print(f"Linking dataset {dataset_id} to study {study_id}")
 
-        self.provider_api.put_to_provider_api(
-            f"{self.base_url}/studies/{study_id}/datasets/{dataset_id}",
-            access_token)
+        url = f"{self.base_url}/studies/{study_id}/datasets/{dataset_id}"
+        self.provider_api.put_to_provider_api(url, access_token)
 
         print(f"Dataset linked successfully to study: {study_id}")
 
@@ -671,8 +645,8 @@ class CmdSubmit:
         """
         print(f"Linking biomaterial {biomaterial_id} to dataset {dataset_id}")
 
-        self.provider_api.put_to_provider_api(
-            f"{self.base_url}/datasets/{dataset_id}/biomaterials/{biomaterial_id}", access_token)
+        url = f"{self.base_url}/datasets/{dataset_id}/biomaterials/{biomaterial_id}"
+        self.provider_api.put_to_provider_api(url, access_token)
 
         print(f"Biomaterial linked successfully to dataset: {dataset_id}")
 
@@ -687,9 +661,8 @@ class CmdSubmit:
         """
         print(f"Linking biomaterial {biomaterial_id} to process {process_id}")
 
-        self.perform_hal_linkage(
-            f"{self.base_url}/biomaterials/{biomaterial_id}/inputToProcesses",
-            process_id, 'processes', access_token)
+        url = f"{self.base_url}/biomaterials/{biomaterial_id}/inputToProcesses"
+        self.perform_hal_linkage(url, process_id, 'processes', access_token)
 
     def post_to_provider_api(self, url, data_type_in_hal_link, data, access_token):
         """
@@ -720,12 +693,12 @@ class CmdSubmit:
         Sends a DELETE request to delete a submission envelope.
 
         Parameters:
-        - submission_envelope_id (str): ID of the submission envelope to delete.
-        - access_token (str): Access token for authorization.
-        - force_delete (bool): Whether to force delete the submission envelope (default: False).
+            submission_envelope_id (str): ID of the submission envelope to delete.
+            access_token (str): Access token for authorization.
+            force_delete (bool): Whether to force delete the submission envelope (default: False).
 
         Returns:
-        - str: The URL from the response.
+            bool: True if the deletion was successful, False otherwise.
         """
         url = f"{self.submission_envelope_base_url}/{submission_envelope_id}"
         headers = {
@@ -733,20 +706,15 @@ class CmdSubmit:
             'Authorization': f'Bearer {access_token}'
         }
 
-        params = {
-            'force': 'true' if force_delete else 'false'
-        }
+        params = {'force': str(force_delete).lower()}
 
         response = requests.delete(url, headers=headers, params=params)
 
-        # Check if the status code indicates success (2xx)
-        if response.status_code // 100 == 2:
-            return True
-        return False
+        return response.status_code // 100 == 2
 
     def post_to_provider_api_and_get_entity_id(self, url, data, access_token):
         """
-        Sends a POST request to the specified URL.
+        Sends a POST request to the specified URL and returns the entity ID from the response.
 
         Parameters:
             url (str): The URL to send the request to.
@@ -754,7 +722,7 @@ class CmdSubmit:
             access_token (str): Access token for authorization.
 
         Returns:
-            str: The URL from the response.
+            str: The entity ID extracted from the response URL.
         """
         headers = {
             'Content-Type': 'application/json',
@@ -763,9 +731,9 @@ class CmdSubmit:
 
         response = requests.post(url, headers=headers, json=data)
         response_data = response.json()
-        url = response_data['_links']['self']['href']
+        entity_url = response_data['_links']['self']['href']
 
-        return get_id_from_url(url)
+        return get_id_from_url(entity_url)
 
     def create_new_submission_envelope(self, url, access_token):
         """
@@ -776,7 +744,7 @@ class CmdSubmit:
             access_token (str): Access token for authorization.
 
         Returns:
-            dict: The response data.
+            tuple: A tuple containing the response data and the status code.
         """
         headers = {
             'Content-Type': 'application/json',
@@ -786,15 +754,15 @@ class CmdSubmit:
         response = requests.post(url, headers=headers, json={})
         status_code = response.status_code
 
-        if status_code == 200 or status_code == 201:
+        if status_code in {200, 201}:
             response_data = response.json()
-            return response_data, response.status_code
-        else:
-            return None, status_code
+            return response_data, status_code
+
+        return None, status_code
 
     def perform_hal_linkage(self, url, input_id, link_to, access_token):
         """
-        Performs HAL linkage.
+        Performs HAL linkage by sending a POST request.
 
         Parameters:
             url (str): The URL to send the request to.
@@ -802,22 +770,21 @@ class CmdSubmit:
             link_to (str): The entity to link to.
             access_token (str): Access token for authorization.
 
-        Returns:
-            dict: The response data.
+        Raises:
+            Exception: If the linkage fails.
         """
         headers = {
             'Content-Type': 'text/uri-list',
             'Authorization': f'Bearer {access_token}'
         }
 
-        response = requests.post(url, headers=headers,
-                                 data=f"{self.base_url}/{link_to}/{input_id}")
+        response = requests.post(url, headers=headers, data=f"{self.base_url}/{link_to}/{input_id}")
 
         if response.status_code != 200:
             raise Exception(f"Failed to link biomaterial to process {input_id}. "
                             f"Status code: {response.status_code}, Response: {response.text}")
         else:
-            print("linkage successful")
+            print("Linkage successful")
 
     def transform(self, file):
         """
@@ -829,84 +796,75 @@ class CmdSubmit:
         Returns:
             dict: The JSON object.
         """
-        if self.args.file.endswith('.tsv'):
+        if file.endswith('.tsv'):
             json_data = []
             with open(file, 'r', newline='') as file:
                 reader = csv.DictReader(file, delimiter='\t')
                 for row in reader:
                     json_data.append(row)
-            json_data_formatted = {'content': json_data}
-            data = json_data_formatted
+            return {'content': json_data}
+
         elif file.endswith('.csv'):
             df = pd.read_csv(file)
-            data = {'content': df.to_dict(orient='records')}
+            return {'content': df.to_dict(orient='records')}
+
         else:
             with open(file, 'r') as file:
-                data = json.load(file)
-        return data
+                return json.load(file)
 
     def create_child_biomaterial(self, cell_line_entity_id, body, access_token):
-        url = self.base_url + '/' + 'biomaterials' + '/' + cell_line_entity_id + '/' + 'childBiomaterials'
+        url = f"{self.base_url}/biomaterials/{cell_line_entity_id}/childBiomaterials"
 
         entity_id = self.post_to_provider_api_and_get_entity_id(url, body, access_token)
         return entity_id
 
     def link_entity_to_envelope(self, type, entity_id, submission_envelope_id, access_token):
-        # TODO: handle other types
-        global url
+        """
+        Links an entity to a submission envelope.
 
+        Parameters:
+            type (str): The type of the entity (e.g., 'biomaterial', 'file').
+            entity_id (str): The ID of the entity to link.
+            submission_envelope_id (str): The ID of the submission envelope.
+            access_token (str): Access token for authorization.
+        """
         if type == 'biomaterial':
-            url = (self.submission_envelope_base_url + '/' + submission_envelope_id +
-                   '/' + 'biomaterials' + '/' + entity_id)
+            url = f"{self.submission_envelope_base_url}/{submission_envelope_id}/biomaterials/{entity_id}"
         elif type == 'file':
-            url = (self.submission_envelope_base_url + '/' + submission_envelope_id +
-                   '/' + 'files' + '/' + entity_id)
+            url = f"{self.submission_envelope_base_url}/{submission_envelope_id}/files/{entity_id}"
 
-        # self.put_to_provider_api(url, access_token)
         self.provider_api.put_to_provider_api(url, access_token)
 
     def delete_dataset(self, dataset, access_token):
-        # delete_to_provider_api(self.base_url + '/' + dataset, access_token)
         """
-        self.provider_api.delete_to_provider_api_including_linked_entities(
-            self.base_url + '/' + 'datasets' + '/' + dataset,
-            access_token, True)
-        """
+        Deletes a dataset along with its associated biomaterials, processes, and data files.
 
-        # Fetch the dataset from the provider API
-        fetched_dataset = self.provider_api.get_to_provider_api(self.base_url + '/' + 'datasets' + '/' + dataset,
-                                                                access_token)
-        print(f"Dataset fetched successfully {dataset}")
+        Parameters:
+            dataset (str): The ID of the dataset to delete.
+            access_token (str): Access token for authorization.
+        """
+        fetched_dataset = self.provider_api.get_to_provider_api(f"{self.base_url}/datasets/{dataset}", access_token)
+        print(f"Dataset fetched successfully: {dataset}")
         print(f"Initiating delete of {dataset}")
 
-        # Extract lists of biomaterials, processes, and data files from the dataset
         biomaterials = fetched_dataset.get('biomaterials', [])
         processes = fetched_dataset.get('processes', [])
         data_files = fetched_dataset.get('dataFiles', [])
 
-        # Print a message indicating deletion of biomaterials
         print("Deleting Biomaterials:")
-
-        # Iterate over biomaterials and delete each one
         for biomaterial in biomaterials:
             print(f"Deleting {biomaterial}")
-            self.provider_api.delete_to_provider_api(self.base_url + '/' + 'biomaterials' + '/' + biomaterial,
-                                                     access_token)
+            self.provider_api.delete_to_provider_api(f"{self.base_url}/biomaterials/{biomaterial}", access_token)
 
-        # Print a message indicating deletion of processes
         print("\nDeleting Processes:")
-        # Iterate over processes and delete each one
         for process in processes:
             print(f"Deleting {process}")
-            self.provider_api.delete_to_provider_api(self.base_url + '/' + 'processes' + '/' + process, access_token)
+            self.provider_api.delete_to_provider_api(f"{self.base_url}/processes/{process}", access_token)
 
-        # Print a message indicating deletion of data files
         print("\nDeleting Data Files:")
-        # Iterate over data files and delete each one
         for data_file in data_files:
             print(f"Deleting {data_file}")
-            self.provider_api.delete_to_provider_api(self.base_url + '/' + 'files' + '/' + data_file, access_token)
+            self.provider_api.delete_to_provider_api(f"{self.base_url}/files/{data_file}", access_token)
 
         print(f"\nDeleting the dataset: {dataset}")
-
-        self.provider_api.delete_to_provider_api(self.base_url + '/' + 'datasets' + '/' + dataset, access_token)
+        self.provider_api.delete_to_provider_api(f"{self.base_url}/datasets/{dataset}", access_token)

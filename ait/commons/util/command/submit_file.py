@@ -1,11 +1,17 @@
 # Import necessary modules/classes from ait.commons.util package
+import os
+import sys
+
 import pandas as pd
 from ait.commons.util.aws_client import Aws
 from ait.commons.util.command.list import CmdList
 from ait.commons.util.command.submit import CmdSubmit, get_id_from_url
+from ait.commons.util.command.upload import CmdUpload
 from ait.commons.util.user_profile import get_profile
 from ait.commons.util.provider_api_util import APIProvider
-from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter
+from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter, ValidationError, \
+    merge_library_preparation_sequencing_file, merge_cell_line_and_differentiated_cell_line, \
+    merge_differentiated_cell_line_and_library_preparation
 
 
 # Define a class for handling submission of a command file
@@ -42,7 +48,8 @@ class CmdSubmitFile:
         self.user_profile = get_profile('morphic-util')
         self.aws = Aws(self.user_profile)
         self.provider_api = APIProvider(self.base_url)
-        self.errors = []
+        self.validation_errors = []
+        self.submission_errors = []
 
         if hasattr(self.args, 'action') and self.args.action is not None:
             self.action = self.args.action
@@ -82,6 +89,7 @@ class CmdSubmitFile:
             return True, None
 
         list_instance = CmdList(self.aws, self.args)
+        upload_instance = CmdUpload(self.aws, self.args)
         list_of_files_in_upload_area = list_instance.list_bucket_contents_and_return(self.dataset, '')
 
         if self.file:
@@ -89,21 +97,33 @@ class CmdSubmitFile:
             parser = SpreadsheetSubmitter(self.file)
 
             # Parse different sections of the spreadsheet using defined column mappings
-            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line', self.action, self.errors)
+            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line', self.action, self.validation_errors)
             differentiated_cell_lines, differentiated_cell_lines_df = parser.get_differentiated_cell_lines(
-                'Differentiated cell line', self.action)
-            parser.merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines, self.errors)
+                'Differentiated cell line', self.action, self.validation_errors)
+            merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines,
+                                                         self.validation_errors)
             library_preparations, library_preparations_df = parser.get_library_preparations(
-                'Library preparation', self.action)
-            parser.merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
-                                                                          library_preparations)
+                'Library preparation', self.action, self.validation_errors)
+            merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
+                                                                   library_preparations, self.validation_errors)
             sequencing_files, sequencing_files_df = parser.get_sequencing_files(
-                'Sequence file', self.action)
+                'Sequence file', self.action, self.validation_errors)
 
             # validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, self.dataset)
 
-            parser.merge_library_preparation_sequencing_file(library_preparations, sequencing_files)
-            submission_envelope_id = None
+            merge_library_preparation_sequencing_file(library_preparations, sequencing_files,
+                                                      self.validation_errors)
+
+            try:
+                if len(self.validation_errors) > 0:
+                    raise ValidationError(self.validation_errors)
+                else:
+                    print(f"File {self.file} is validated successfully. Initiating submission")
+                    print(f"File {self.file} being uploaded to storage")
+                    upload_instance.upload_file(self.dataset, self.file, os.path.basename(self.file))
+            except ValidationError as e:
+                print(e)
+                sys.exit(1)
 
             if self.action == 'add' or self.action == 'ADD':
                 submission_envelope_response, status_code = submission_instance.create_new_submission_envelope(
@@ -131,25 +151,52 @@ class CmdSubmitFile:
                 ) = submission_instance.multi_type_submission(
                     cell_lines, cell_lines_df, differentiated_cell_lines_df,
                     library_preparations_df, sequencing_files_df, submission_envelope_id,
-                    self.dataset, self.access_token, self.action
+                    self.dataset, self.access_token, self.action, self.submission_errors
                 )
 
                 # Save the updated dataframes to a single Excel file with multiple sheets
                 if message == 'SUCCESS':
                     output_file = "submission-result.xlsx"
-                    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-                        updated_cell_lines_df.to_excel(writer, sheet_name='Cell line', index=False)
-                        updated_differentiated_cell_lines_df.to_excel(writer, sheet_name='Differentiated cell line',
-                                                                      index=False)
-                        updated_library_preparations_df.to_excel(writer, sheet_name='Library preparation', index=False)
-                        updated_sequencing_files_df.to_excel(writer, sheet_name='Sequence file', index=False)
+                    try:
+                        # Write to Excel file
+                        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                            updated_cell_lines_df.to_excel(writer, sheet_name='Cell line', index=False)
+                            updated_differentiated_cell_lines_df.to_excel(writer, sheet_name='Differentiated cell line',
+                                                                          index=False)
+                            updated_library_preparations_df.to_excel(writer, sheet_name='Library preparation',
+                                                                     index=False)
+                            updated_sequencing_files_df.to_excel(writer, sheet_name='Sequence file', index=False)
 
-                    return True, message
+                        # Confirm file was written and path exists
+                        if os.path.exists(output_file):
+                            # Attempt file upload
+                            upload_instance.upload_file(self.dataset, output_file, os.path.basename(output_file))
+                            print(f"File {output_file} uploaded successfully.")
+                        else:
+                            raise FileNotFoundError(
+                                f"The output file {output_file} was not created or cannot be found.")
+
+                    except Exception as e:
+                        print(f"Failed to upload file {output_file}. Error: {e}")
+                    return True, "SUBMISSION IS SUCCESSFUL."
                 else:
-                    print("Submission has failed, rolling back")
-                    submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
-                    return False, "Submission has failed, rolled back"
+                    return self.delete_actions(submission_envelope_id,
+                                               submission_instance,
+                                               None)
             except Exception as e:
-                print("Submission has failed, rolling back")
-                submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
+                return self.delete_actions(submission_envelope_id, submission_instance, e)
+
+    def delete_actions(self, submission_envelope_id, submission_instance, e):
+        try:
+            print("SUBMISSION failed, rolling back")
+            print("SUBMISSION ERRORS are:")
+            print("\n".join(self.submission_errors))
+            submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
+            submission_instance.delete_dataset(self.dataset, self.access_token)
+
+            if e is None:
+                return False, "Submission has failed, rolled back"
+            else:
                 return False, f"An error occurred: {str(e)}"
+        except Exception as e:
+            print(f"Failed to rollback submission  {submission_envelope_id}")

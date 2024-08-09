@@ -2,28 +2,38 @@ import pandas as pd
 import json
 import numpy as np
 
-
+"""
 class MissingMandatoryFieldError(Exception):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
 
-
-class MissingParentEntityError(Exception):
-    """Custom exception raised when an expected entity is missing."""
-
-    def __init__(self, missing_type, entity_type, missing_id):
-        super().__init__(f"Missing {missing_type} for {entity_type} and ID is {missing_id}")
-        self.entity_type = entity_type
-        self.missing_type = missing_type
-        self.missing_id = missing_id
+"""
 
 
+class MissingParentEntityError:
+
+    def add_error(self, missing_type, entity_type, missing_id, errors):
+        errors.append(f"Missing {missing_type} for {entity_type} and ID is {missing_id}")
+
+
+class ValidationError(Exception):
+    def __init__(self, errors):
+        self.errors = errors
+        super().__init__("Validation errors occurred")
+
+    def __str__(self):
+        return "\n".join(self.errors)
+
+
+"""
 class OrphanedEntityError(Exception):
     def __init__(self, type, id):
         super().__init__(f"Orphaned entity {type} and ID is {id}")
         self.type = type
         self.id = id
+
+"""
 
 
 class CellLine:
@@ -188,6 +198,180 @@ class SequencingFile:
         pass
 
 
+def find_orphans(source_entities, target_entities,
+                 source_attr, target_attr, source_type, target_type, errors):
+    """
+    Validates that each source entity has a corresponding target entity.
+
+    Parameters:
+        source_entities (list): The list of source entities.
+        target_entities (list): The list of target entities.
+        source_attr (str): The attribute name in the source entity to compare.
+        target_attr (str): The attribute name in the target entity to compare.
+        source_type (str): The type name of the source entity (for error messages).
+        target_type (str): The type name of the target entity (for error messages).
+
+    Raises:
+        OrphanedEntityError: If a source entity doesn't have a corresponding target entity.
+    """
+    for source_entity in source_entities:
+        match_found = False
+
+        for target_entity in target_entities:
+            if getattr(target_entity, target_attr) == getattr(source_entity, source_attr):
+                match_found = True
+                break
+
+        if not match_found:
+            errors.append(f"Orphaned entity {source_type} and ID is {getattr(source_entity, source_attr)}")
+            # raise OrphanedEntityError(source_type, getattr(source_entity, source_attr))
+
+    # print(f"VALIDATED: All {source_type.lower()}s have corresponding {target_type.lower()}s.")
+
+
+def merge_library_preparation_sequencing_file(library_preparations, sequencing_files, errors):
+    """
+    Merges library preparations and sequencing files based on their IDs.
+
+    Parameters:
+    -----------
+    library_preparations : list
+        A list of LibraryPreparation objects to be merged.
+    sequencing_files : list
+        A list of SequencingFile objects to be merged.
+
+    Returns:
+    --------
+    None
+
+    Raises:
+    ------
+    MissingEntityError:
+        If a sequencing file does not have a corresponding library preparation.
+    """
+    find_orphans(
+        source_entities=library_preparations,
+        target_entities=sequencing_files,
+        source_attr="biomaterial_id",  # Assuming this is the correct attribute
+        target_attr="library_preparation_id",
+        source_type="Library Preparation",
+        target_type="Sequencing File",
+        errors=errors
+    )
+
+    missing_parent_entity_error = MissingParentEntityError()
+    library_ids = {lib_prep.biomaterial_id for lib_prep in library_preparations}
+
+    for sequencing_file in sequencing_files:
+        if sequencing_file.library_preparation_id not in library_ids:
+            missing_parent_entity_error.add_error("Library Preparation",
+                                                  "Sequencing File",
+                                                  sequencing_file.file_name,
+                                                  errors)
+
+    for library_preparation in library_preparations:
+        for sequencing_file in sequencing_files:
+            if sequencing_file.library_preparation_id == library_preparation.biomaterial_id:
+                library_preparation.add_sequencing_file(sequencing_file)
+
+
+def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines, library_preparations,
+                                                           errors):
+    """
+    Merges differentiated cell lines and library preparations based on their biomaterial IDs.
+
+    Parameters:
+    -----------
+    differentiated_cell_lines : list
+        A list of DifferentiatedCellLine objects to be merged.
+    library_preparations : list
+        A list of LibraryPreparation objects to be merged.
+
+    Returns:
+    --------
+    None
+
+    Raises:
+    ------
+    MissingEntityError:
+        If a library preparation does not have a corresponding differentiated cell line.
+    """
+
+    find_orphans(
+        source_entities=differentiated_cell_lines,
+        target_entities=library_preparations,
+        source_attr="biomaterial_id",
+        target_attr="differentiated_biomaterial_id",
+        source_type="Differentiated Cell line",
+        target_type="Library Preparation",
+        errors=errors
+    )
+
+    missing_parent_entity_error = MissingParentEntityError()
+
+    differentiated_ids = {diff_cell.biomaterial_id for diff_cell in differentiated_cell_lines}
+
+    for library_preparation in library_preparations:
+        if library_preparation.differentiated_biomaterial_id not in differentiated_ids:
+            missing_parent_entity_error.add_error("Differentiated Cell Line",
+                                                  "Library Preparation",
+                                                  library_preparation.biomaterial_id,
+                                                  errors)
+
+    for differentiated_cell_line in differentiated_cell_lines:
+        for library_preparation in library_preparations:
+            if library_preparation.differentiated_biomaterial_id == differentiated_cell_line.biomaterial_id:
+                differentiated_cell_line.add_library_preparation(library_preparation)
+
+
+def merge_cell_line_and_differentiated_cell_line(cell_lines,
+                                                 differentiated_cell_lines, errors):
+    """
+    Merges cell lines and differentiated cell lines based on their biomaterial IDs.
+
+    Parameters:
+    -----------
+    cell_lines : list
+        A list of CellLine objects to be merged.
+    differentiated_cell_lines : list
+        A list of DifferentiatedCellLine objects to be merged.
+
+    Returns:
+    --------
+    None
+
+    Raises:
+    ------
+    MissingEntityError:
+        If a differentiated cell line does not have a corresponding cell line.
+    """
+
+    find_orphans(
+        source_entities=cell_lines,
+        target_entities=differentiated_cell_lines,
+        source_attr="biomaterial_id",
+        target_attr="input_biomaterial_id",
+        source_type="Cell line",
+        target_type="Differentiated Cell line",
+        errors=errors
+    )
+
+    missing_parent_entity_error = MissingParentEntityError()
+    cell_line_ids = {cell_line.biomaterial_id for cell_line in cell_lines}
+
+    for differentiated_cell_line in differentiated_cell_lines:
+        if differentiated_cell_line.input_biomaterial_id not in cell_line_ids:
+            missing_parent_entity_error.add_error("Cell Line",
+                                                  "Differentiated Cell line",
+                                                  differentiated_cell_line.biomaterial_id,
+                                                  errors)
+
+    for cell_line in cell_lines:
+        for differentiated_cell_line in differentiated_cell_lines:
+            if differentiated_cell_line.input_biomaterial_id == cell_line.biomaterial_id:
+                cell_line.add_differentiated_cell_line(differentiated_cell_line)
+
+
 class SpreadsheetSubmitter:
     """
     A class for parsing and processing data from an Excel spreadsheet containing information about
@@ -292,7 +476,9 @@ class SpreadsheetSubmitter:
 
         # Check if the required column exists
         if 'cell_line.biomaterial_core.biomaterial_id' not in df.columns:
-            raise KeyError("The column 'cell_line.biomaterial_core.biomaterial_id' does not exist.")
+            # raise KeyError("The column 'cell_line.biomaterial_core.biomaterial_id' does not exist.")
+            errors.append("The column 'cell_line.biomaterial_core.biomaterial_id' does not exist in Cell line sheet. "
+                          "The rest of the file will not be processed")
 
         # Filter rows where biomaterial_id is not null
         df = df[df['cell_line.biomaterial_core.biomaterial_id'].notna()]
@@ -319,15 +505,19 @@ class SpreadsheetSubmitter:
 
             # Check if biomaterial_id is null
             if pd.isnull(biomaterial_id):
-                errors.append("Biomaterial ID cannot be null.")
-                raise MissingMandatoryFieldError("Biomaterial ID cannot be null.")
+                errors.append("Biomaterial ID cannot be null in any row of the Cell line sheet.")
+                # raise MissingMandatoryFieldError("Biomaterial ID cannot be null.")
 
             # Check if derived_accession and cell_type are present
             if pd.isnull(derived_accession) or pd.isnull(cell_type):
-                errors.append(f"Mandatory fields (derived_accession, cell_type) are required. {biomaterial_id}")
+                errors.append(f"Mandatory fields (derived_accession, cell_type) are required for Cell line entity: "
+                              f"{biomaterial_id}")
 
+                """
                 raise MissingMandatoryFieldError(
-                    f"Mandatory fields (derived_accession, cell_type) are required. {biomaterial_id}")
+                    f"Mandatory fields (derived_accession, cell_type) are required. "
+                    f"{biomaterial_id}")
+                """
 
             cell_lines.append(
                 CellLine(
@@ -344,7 +534,7 @@ class SpreadsheetSubmitter:
 
         return cell_lines, df_filtered
 
-    def parse_differentiated_cell_lines(self, sheet_name, action):
+    def parse_differentiated_cell_lines(self, sheet_name, action, errors):
         """
         Parses data related to differentiated cell lines from a specified sheet in the Excel file.
 
@@ -374,7 +564,8 @@ class SpreadsheetSubmitter:
 
         # Check if the required column exists
         if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
-            raise KeyError("The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not exist.")
+            errors.append("The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not "
+                          "exist.")
 
         # Filter rows where biomaterial_id is not null
         df = df[df['differentiated_cell_line.biomaterial_core.biomaterial_id'].notna()]
@@ -400,12 +591,18 @@ class SpreadsheetSubmitter:
 
             # Check if biomaterial_id is null
             if pd.isnull(differentiated_biomaterial_id):
-                raise MissingMandatoryFieldError("Differentiated Cell line ID cannot be null.")
+                errors.append("Differentiated Cell line ID cannot be null in any row of the Differentiated Cell line "
+                              "sheet.")
+                # raise MissingMandatoryFieldError("Differentiated Cell line ID cannot be null in any row.")
 
             # Check if derived_accession and cell_type are present
             if pd.isnull(biomaterial_id):
+                errors.append(f"Input Cell line ID cannot be null for Differentiated Cell line:  "
+                              f"{differentiated_biomaterial_id}")
+                """
                 raise MissingMandatoryFieldError(
                     "Input Cell line ID cannot be null. " + differentiated_biomaterial_id)
+                """
 
             # Create DifferentiatedCellLine objects from filtered DataFrame rows
             differentiated_cell_lines.append(
@@ -424,7 +621,7 @@ class SpreadsheetSubmitter:
 
         return differentiated_cell_lines, df_filtered
 
-    def parse_library_preparations(self, sheet_name, action):
+    def parse_library_preparations(self, sheet_name, action, errors):
         """
         Parses data related to library preparations from a specified sheet in the Excel file.
 
@@ -459,7 +656,7 @@ class SpreadsheetSubmitter:
         ]
         for col in required_columns:
             if col not in df.columns:
-                raise KeyError(f"The column '{col}' does not exist.")
+                errors.append(f"The column '{col}' does not exist in the Library Preparation sheet.")
 
         # Filter rows where biomaterial_id is not null
         df = df[df['library_preparation.biomaterial_core.biomaterial_id'].notna()]
@@ -487,13 +684,18 @@ class SpreadsheetSubmitter:
 
             # Check if required fields are null
             if pd.isnull(library_preparation_id):
-                raise MissingMandatoryFieldError("Library Preparation ID cannot be null.")
+                errors.append("Library Preparation ID cannot be null in any row of the Library Preparation sheet.")
+                # raise MissingMandatoryFieldError("Library Preparation ID cannot be null in any row.")
             if pd.isnull(dissociation_protocol_id):
-                raise MissingMandatoryFieldError("Dissociation Protocol ID cannot be null.")
+                errors.append("Dissociation Protocol ID cannot be null in any row of the Library Preparation sheet.")
+                # raise MissingMandatoryFieldError("Dissociation Protocol ID cannot be null in any row.")
             if pd.isnull(differentiated_biomaterial_id):
-                raise MissingMandatoryFieldError("Differentiated Cell Line ID cannot be null.")
+                errors.append("Differentiated Cell Line ID cannot be null in any row of the Library Preparation sheet.")
+                # raise MissingMandatoryFieldError("Differentiated Cell Line ID cannot be null in any row.")
             if pd.isnull(library_preparation_protocol_id):
-                raise MissingMandatoryFieldError("Library Preparation Protocol ID cannot be null.")
+                errors.append(
+                    "Library Preparation Protocol ID cannot be null in any row of the Library Preparation sheet.")
+                # raise MissingMandatoryFieldError("Library Preparation Protocol ID cannot be null in any row.")
 
             # Create LibraryPreparation objects from filtered DataFrame rows
             library_preparations.append(
@@ -517,7 +719,7 @@ class SpreadsheetSubmitter:
 
         return library_preparations, df_filtered
 
-    def parse_sequencing_files(self, sheet_name, action):
+    def parse_sequencing_files(self, sheet_name, action, errors):
         """
         Parses data related to sequencing files from a specified sheet in the Excel file.
 
@@ -552,7 +754,7 @@ class SpreadsheetSubmitter:
         ]
         for col in required_columns:
             if col not in df.columns:
-                raise KeyError(f"The column '{col}' does not exist.")
+                errors.append(f"The column '{col}' does not exist in the Sequencing File sheet.")
 
         # Filter rows where file_name is not null
         df = df[df['sequence_file.file_core.file_name'].notna()]
@@ -581,13 +783,17 @@ class SpreadsheetSubmitter:
 
             # Check if required fields are null
             if pd.isnull(file_name):
-                raise MissingMandatoryFieldError("Sequence file name cannot be null.")
+                errors.append("Sequence file name cannot be null in any row of the Sequencing File sheet.")
+                # raise MissingMandatoryFieldError("Sequence file name cannot be null in any row.")
             if pd.isnull(library_preparation_id):
-                raise MissingMandatoryFieldError("Library Preparation ID cannot be null.")
+                errors.append("Library Preparation ID cannot be null in any row of the Sequencing File sheet..")
+                # raise MissingMandatoryFieldError("Library Preparation ID cannot be null in any row.")
             if pd.isnull(sequencing_protocol_id):
-                raise MissingMandatoryFieldError("Sequencing Protocol ID cannot be null.")
+                errors.append("Sequencing Protocol ID cannot be null in any row of the Sequencing File sheet..")
+                # raise MissingMandatoryFieldError("Sequencing Protocol ID cannot be null in any row.")
             if pd.isnull(read_index):
-                raise MissingMandatoryFieldError("Read Index cannot be null.")
+                errors.append("Read Index cannot be null in any row of the Sequencing File sheet..")
+                # raise MissingMandatoryFieldError("Read Index cannot be null in any row.")
 
             # Create SequencingFile objects from filtered DataFrame rows
             sequencing_files.append(
@@ -622,7 +828,7 @@ class SpreadsheetSubmitter:
         cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name, action, errors)
         return cell_lines, cell_lines_df
 
-    def get_differentiated_cell_lines(self, sheet_name, action):
+    def get_differentiated_cell_lines(self, sheet_name, action, errors):
         """
         Retrieves parsed differentiated cell lines data from a specified sheet in the Excel file.
 
@@ -640,172 +846,10 @@ class SpreadsheetSubmitter:
         """
         differentiated_cell_lines, differentiated_cell_lines_df = (self.
                                                                    parse_differentiated_cell_lines
-                                                                   (sheet_name, action))
+                                                                   (sheet_name, action, errors))
         return differentiated_cell_lines, differentiated_cell_lines_df
 
-    def merge_cell_line_and_differentiated_cell_line(self, cell_lines,
-                                                     differentiated_cell_lines, errors):
-        """
-        Merges cell lines and differentiated cell lines based on their biomaterial IDs.
-
-        Parameters:
-        -----------
-        cell_lines : list
-            A list of CellLine objects to be merged.
-        differentiated_cell_lines : list
-            A list of DifferentiatedCellLine objects to be merged.
-
-        Returns:
-        --------
-        None
-
-        Raises:
-        ------
-        MissingEntityError:
-            If a differentiated cell line does not have a corresponding cell line.
-        """
-
-        self.find_orphans(
-            source_entities=cell_lines,
-            target_entities=differentiated_cell_lines,
-            source_attr="biomaterial_id",
-            target_attr="input_biomaterial_id",
-            source_type="Cell line",
-            target_type="Differentiated Cell line",
-            errors=errors
-        )
-
-        cell_line_ids = {cell_line.biomaterial_id for cell_line in cell_lines}
-
-        for differentiated_cell_line in differentiated_cell_lines:
-            if differentiated_cell_line.input_biomaterial_id not in cell_line_ids:
-                raise MissingParentEntityError("Cell Line",
-                                               "Differentiated cell line",
-                                               differentiated_cell_line.biomaterial_id)
-
-        for cell_line in cell_lines:
-            for differentiated_cell_line in differentiated_cell_lines:
-                if differentiated_cell_line.input_biomaterial_id == cell_line.biomaterial_id:
-                    cell_line.add_differentiated_cell_line(differentiated_cell_line)
-
-    def merge_differentiated_cell_line_and_library_preparation(self, differentiated_cell_lines, library_preparations):
-        """
-        Merges differentiated cell lines and library preparations based on their biomaterial IDs.
-
-        Parameters:
-        -----------
-        differentiated_cell_lines : list
-            A list of DifferentiatedCellLine objects to be merged.
-        library_preparations : list
-            A list of LibraryPreparation objects to be merged.
-
-        Returns:
-        --------
-        None
-
-        Raises:
-        ------
-        MissingEntityError:
-            If a library preparation does not have a corresponding differentiated cell line.
-        """
-
-        self.find_orphans(
-            source_entities=differentiated_cell_lines,
-            target_entities=library_preparations,
-            source_attr="biomaterial_id",
-            target_attr="differentiated_biomaterial_id",
-            source_type="Differentiated Cell line",
-            target_type="Library Preparation",
-            errors=[]
-        )
-
-        differentiated_ids = {diff_cell.biomaterial_id for diff_cell in differentiated_cell_lines}
-
-        for library_preparation in library_preparations:
-            if library_preparation.differentiated_biomaterial_id not in differentiated_ids:
-                raise MissingParentEntityError("Differentiated Cell Line",
-                                               "Library preparation",
-                                               library_preparation.biomaterial_id)
-
-        for differentiated_cell_line in differentiated_cell_lines:
-            for library_preparation in library_preparations:
-                if library_preparation.differentiated_biomaterial_id == differentiated_cell_line.biomaterial_id:
-                    differentiated_cell_line.add_library_preparation(library_preparation)
-
-    def merge_library_preparation_sequencing_file(self, library_preparations, sequencing_files):
-        """
-        Merges library preparations and sequencing files based on their IDs.
-
-        Parameters:
-        -----------
-        library_preparations : list
-            A list of LibraryPreparation objects to be merged.
-        sequencing_files : list
-            A list of SequencingFile objects to be merged.
-
-        Returns:
-        --------
-        None
-
-        Raises:
-        ------
-        MissingEntityError:
-            If a sequencing file does not have a corresponding library preparation.
-        """
-        self.find_orphans(
-            source_entities=library_preparations,
-            target_entities=sequencing_files,
-            source_attr="biomaterial_id",  # Assuming this is the correct attribute
-            target_attr="library_preparation_id",
-            source_type="Library Preparation",
-            target_type="Sequencing File",
-            errors=[]
-        )
-
-        library_ids = {lib_prep.biomaterial_id for lib_prep in library_preparations}
-
-        for sequencing_file in sequencing_files:
-            if sequencing_file.library_preparation_id not in library_ids:
-                raise MissingParentEntityError("Library preparation",
-                                               "Sequencing file",
-                                               sequencing_file.file_name)
-
-        for library_preparation in library_preparations:
-            for sequencing_file in sequencing_files:
-                if sequencing_file.library_preparation_id == library_preparation.biomaterial_id:
-                    library_preparation.add_sequencing_file(sequencing_file)
-
-    def find_orphans(self, source_entities, target_entities,
-                     source_attr, target_attr, source_type, target_type, errors):
-        """
-        Validates that each source entity has a corresponding target entity.
-
-        Parameters:
-            source_entities (list): The list of source entities.
-            target_entities (list): The list of target entities.
-            source_attr (str): The attribute name in the source entity to compare.
-            target_attr (str): The attribute name in the target entity to compare.
-            source_type (str): The type name of the source entity (for error messages).
-            target_type (str): The type name of the target entity (for error messages).
-
-        Raises:
-            OrphanedEntityError: If a source entity doesn't have a corresponding target entity.
-        """
-        for source_entity in source_entities:
-            match_found = False
-
-            for target_entity in target_entities:
-                if getattr(target_entity, target_attr) == getattr(source_entity, source_attr):
-                    match_found = True
-                    break
-
-            if not match_found:
-                errors.append(source_type + getattr(source_entity, source_attr))
-                raise OrphanedEntityError(source_type, getattr(source_entity, source_attr))
-
-        print(f"VALIDATED: All {source_type.lower()}s have corresponding {target_type.lower()}s.")
-
-    def get_library_preparations(self, sheet_name, action):
+    def get_library_preparations(self, sheet_name, action, errors):
         """
         Retrieves parsed library preparations data from a specified sheet in the Excel file.
 
@@ -822,10 +866,10 @@ class SpreadsheetSubmitter:
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
         library_preparations, df_filtered = self.parse_library_preparations(sheet_name,
-                                                                            action)
+                                                                            action, errors)
         return library_preparations, df_filtered
 
-    def get_sequencing_files(self, sheet_name, action):
+    def get_sequencing_files(self, sheet_name, action, errors):
         """
         Retrieves parsed sequencing files data from a specified sheet in the Excel file.
 
@@ -841,5 +885,5 @@ class SpreadsheetSubmitter:
         list
             A list of SequencingFile objects parsed from the specified sheet.
         """
-        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, action)
+        sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, action, errors)
         return sequencing_files, df_filtered

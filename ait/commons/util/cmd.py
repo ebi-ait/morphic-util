@@ -14,6 +14,7 @@ from ait.commons.util.command.submit import CmdSubmit
 from ait.commons.util.command.submit_file import CmdSubmitFile
 from ait.commons.util.command.sync import CmdSync
 from ait.commons.util.command.upload import CmdUpload
+from ait.commons.util.command.view import CmdView
 from ait.commons.util.local_state import get_bucket, set_attr, get_attr
 from ait.commons.util.settings import NAME, VERSION
 from ait.commons.util.user_profile import profile_exists, get_profile
@@ -45,6 +46,10 @@ class Cmd:
 
         elif args.command == 'submit-file':
             success, msg = CmdSubmitFile(args).run()
+            print(msg)
+
+        elif args.command == 'view':
+            success, msg = CmdView(args).run()
             print(msg)
 
         else:

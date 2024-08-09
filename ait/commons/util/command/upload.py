@@ -22,9 +22,10 @@ class CmdUpload:
 
     def upload_file(self, selected_area, data_file, destination_file):
 
+        overwrite = getattr(self.args, 'o', False)
         file_size = os.path.getsize(data_file)
 
-        if not self.args.o and self.aws.data_file_exists(selected_area, destination_file):
+        if not overwrite and self.aws.data_file_exists(selected_area, destination_file):
             print(f"{destination_file} already exists. Use -o to overwrite.")
 
         elif file_size == 0:

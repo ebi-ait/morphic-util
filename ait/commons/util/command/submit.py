@@ -88,7 +88,8 @@ class CmdSubmit:
         """
         return self.typed_submission(self.type, self.file, self.access_token)
 
-    def handle_cell_line(self, cell_line, cell_lines_df, submission_envelope_id, dataset_id, access_token, action):
+    def handle_cell_line(self, cell_line, cell_lines_df, submission_envelope_id, dataset_id,
+                         access_token, action, errors):
         """
         Submits a cell line as a biomaterial entity to a specified submission envelope.
 
@@ -106,6 +107,8 @@ class CmdSubmit:
 
             if success:
                 print(f"Updated cell line: {cell_line.id} / {cell_line.biomaterial_id}")
+            else:
+                errors.append(f"Failed to update cell line: {cell_line.id} / {cell_line.biomaterial_id}")
         else:
             cell_line_entity_id_column_name = "Id"
 
@@ -137,7 +140,7 @@ class CmdSubmit:
 
     def handle_differentiated_cell_line(self, cell_line_entity_id, differentiated_cell_line,
                                         differentiated_cell_lines_df, submission_envelope_id, dataset_id,
-                                        access_token, action):
+                                        access_token, action, errors):
         """
         Handles a single differentiated cell line associated with a given cell line.
 
@@ -159,6 +162,9 @@ class CmdSubmit:
             if success:
                 print(f"Updated differentiated cell line: {differentiated_cell_line.id} / "
                       f"{differentiated_cell_line.biomaterial_id}")
+            else:
+                errors.append(f"Failed to update differentiated cell line: {differentiated_cell_line.id} / "
+                              f"{differentiated_cell_line.biomaterial_id}")
         else:
             print("Cell line has differentiated cell lines, creating differentiation process to link them")
 
@@ -232,7 +238,7 @@ class CmdSubmit:
 
     def handle_library_preparation(self, differentiated_entity_id, library_preparation,
                                    library_preparations_df, submission_envelope_id,
-                                   dataset_id, access_token, action):
+                                   dataset_id, access_token, action, errors):
         """
         Handles a single library preparation associated with a given differentiated cell line.
 
@@ -253,6 +259,9 @@ class CmdSubmit:
             if success:
                 print(f"Updated library preparation biomaterial: {library_preparation.id} / "
                       f"{library_preparation.biomaterial_id}")
+            else:
+                errors.append(f"Failed to update library preparation biomaterial: {library_preparation.id} / "
+                              f"{library_preparation.biomaterial_id}")
         else:
             print(f"Creating Library Preparation for Differentiated Cell Line Biomaterial: "
                   f"{differentiated_entity_id}")
@@ -275,11 +284,11 @@ class CmdSubmit:
                 access_token
             )
 
-            print(f"Linking Library Preparation Biomaterial: {differentiated_entity_id} "
+            print(f"Linking Library Preparation Biomaterial: {library_preparation_entity_id} "
                   f"to dataset: {dataset_id}")
 
             self.link_to_dataset('biomaterial', dataset_id,
-                                 differentiated_entity_id, access_token)
+                                 library_preparation_entity_id, access_token)
 
             print(f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} "
                   f"as input to library preparation process")
@@ -313,7 +322,8 @@ class CmdSubmit:
             return library_preparation_entity_id
 
     def handle_sequencing_file(self, library_preparation_entity_id, sequencing_file,
-                               sequencing_file_df, submission_envelope_id, dataset_id, access_token, action):
+                               sequencing_file_df, submission_envelope_id, dataset_id,
+                               access_token, action, errors):
         """
         Handles a single sequencing file associated with a given library preparation.
 
@@ -332,6 +342,8 @@ class CmdSubmit:
 
             if success:
                 print(f"Updated sequencing file: {sequencing_file.id} / {sequencing_file.file_name}")
+            else:
+                errors.append(f"Failed to update sequencing file: {sequencing_file.id} / {sequencing_file.file_name}")
         else:
             print("Creating sequencing process to link the sequencing file")
 
@@ -408,7 +420,8 @@ class CmdSubmit:
                               submission_envelope_id,
                               dataset_id,
                               access_token,
-                              action):
+                              action,
+                              errors):
         """
         Handles the submission of multiple types of biomaterials (cell lines,
         differentiated cell lines, library preparations)
@@ -434,7 +447,8 @@ class CmdSubmit:
                                                             submission_envelope_id,
                                                             dataset_id,
                                                             access_token,
-                                                            action)
+                                                            action,
+                                                            errors)
 
                 for differentiated_cell_line in cell_line.differentiated_cell_lines:
                     differentiated_entity_id = self.handle_differentiated_cell_line(cell_line_entity_id,
@@ -443,7 +457,8 @@ class CmdSubmit:
                                                                                     submission_envelope_id,
                                                                                     dataset_id,
                                                                                     access_token,
-                                                                                    action)
+                                                                                    action,
+                                                                                    errors)
 
                     for library_preparation in differentiated_cell_line.library_preparations:
                         library_preparation_entity_id = self.handle_library_preparation(differentiated_entity_id,
@@ -452,7 +467,8 @@ class CmdSubmit:
                                                                                         submission_envelope_id,
                                                                                         dataset_id,
                                                                                         access_token,
-                                                                                        action)
+                                                                                        action,
+                                                                                        errors)
 
                         for sequencing_file in library_preparation.sequencing_files:
                             self.handle_sequencing_file(library_preparation_entity_id,
@@ -461,11 +477,13 @@ class CmdSubmit:
                                                         submission_envelope_id,
                                                         dataset_id,
                                                         access_token,
-                                                        action)
+                                                        action,
+                                                        errors)
 
             message = 'SUCCESS'
         except Exception as e:
             message = f"An error occurred: {str(e)}"
+            errors.append(message)
             traceback.print_exc()
             # Set DataFrames to None in case of an error
             cell_lines_df = None

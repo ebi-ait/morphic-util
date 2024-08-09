@@ -91,6 +91,9 @@ def parse_args(args):
     parser_config.add_argument('--action', help='action you want to perform (ADD/MODIFY/DELETE')
     parser_config.add_argument('--dataset', help='your dataset reference')
 
+    parser_config = cmd_parser.add_parser('view', help='view your dataset')
+    parser_config.add_argument('--dataset', help='your dataset reference')
+
     parser_create = cmd_parser.add_parser('create', help='create an upload area (authorised users only)')
     parser_create.add_argument('NAME', help='name for the new area', type=valid_project_name)
     parser_create.add_argument('DPC', help='center name of the submitter', type=valid_project_name)

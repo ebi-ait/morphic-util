@@ -566,7 +566,7 @@ class SpreadsheetSubmitter:
             biomaterial_id = row['cell_line.biomaterial_core.biomaterial_id']
             derived_from_accession = row.get('cell_line.derived_cell_line_accession')
             cell_type = row.get('cell_line.type')
-            # expression_alteration_id = row.get('expression_alteration_id')
+            expression_alteration_id = row.get('expression_alteration_id')
 
             # Error handling for missing mandatory fields
             if pd.isnull(biomaterial_id):
@@ -586,7 +586,7 @@ class SpreadsheetSubmitter:
                     protocol_id=row.get('gene_expression_alteration_protocol.protocol_core.protocol_id'),
                     zygosity=row.get('cell_line.zygosity'),
                     cell_type=cell_type,
-                    expression_alteration_id=None,
+                    expression_alteration_id=expression_alteration_id,
                     id=row.get('Id')
                 )
             )

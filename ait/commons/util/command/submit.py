@@ -6,8 +6,15 @@ import json
 import pandas as pd
 import numpy as np
 from urllib.parse import urlparse
+
 from ait.commons.util.user_profile import get_profile
 from ait.commons.util.provider_api_util import APIProvider
+
+
+def equality(cell_line, expression_alteration):
+    return expression_alteration.expression_alteration_id.replace(" ",
+                                                                  "").strip() == cell_line.expression_alteration_id.replace(
+        " ", "").strip()
 
 
 def get_id_from_url(url):
@@ -88,7 +95,7 @@ class CmdSubmit:
         """
         return self.typed_submission(self.type, self.file, self.access_token)
 
-    def handle_cell_line(self, cell_line, cell_lines_df, submission_envelope_id, dataset_id,
+    def handle_cell_line(self, cell_line, expression_alterations, cell_lines_df, submission_envelope_id, dataset_id,
                          access_token, action, errors):
         """
         Submits a cell line as a biomaterial entity to a specified submission envelope.
@@ -124,6 +131,9 @@ class CmdSubmit:
                 access_token
             )
 
+            self.link_cell_line_with_expression_alterations(access_token, cell_line, cell_line_entity_id,
+                                                            expression_alterations)
+
             print(f"Linking Cell Line Biomaterial: {cell_line.biomaterial_id} to dataset {dataset_id}")
 
             self.link_to_dataset('biomaterial', dataset_id, cell_line_entity_id, access_token)
@@ -137,6 +147,19 @@ class CmdSubmit:
             ] = cell_line_entity_id
 
             return cell_line_entity_id
+
+    def link_cell_line_with_expression_alterations(self, access_token, cell_line, cell_line_entity_id,
+                                                   expression_alterations):
+        for expression_alteration in expression_alterations:
+            if cell_line.expression_alteration_id is not None:
+                if equality(cell_line, expression_alteration):
+                    print(f"Linking cell line {cell_line_entity_id} "
+                          f"as derived by process of {expression_alteration.expression_alteration_id}")
+
+                    self.perform_hal_linkage(
+                        f"{self.base_url}/biomaterials/{cell_line_entity_id}/derivedByProcesses",
+                        expression_alteration.id, 'processes', access_token
+                    )
 
     def handle_differentiated_cell_line(self, cell_line_entity_id, differentiated_cell_line,
                                         differentiated_cell_lines_df, submission_envelope_id, dataset_id,
@@ -413,7 +436,10 @@ class CmdSubmit:
 
         return process_entity_id
 
-    def multi_type_submission(self, cell_lines, cell_lines_df,
+    def multi_type_submission(self,
+                              cell_lines,
+                              expression_alterations,
+                              cell_lines_df,
                               differentiated_cell_lines_df,
                               library_preparations_df,
                               sequencing_file_df,
@@ -443,6 +469,7 @@ class CmdSubmit:
             for cell_line in cell_lines:
 
                 cell_line_entity_id = self.handle_cell_line(cell_line,
+                                                            expression_alterations,
                                                             cell_lines_df,
                                                             submission_envelope_id,
                                                             dataset_id,
@@ -491,11 +518,10 @@ class CmdSubmit:
             library_preparations_df = None
             sequencing_file_df = None
 
-        return (cell_lines_df,
-                differentiated_cell_lines_df,
-                library_preparations_df,
-                sequencing_file_df,
-                message)
+        return ([cell_lines_df,
+                 differentiated_cell_lines_df,
+                 library_preparations_df,
+                 sequencing_file_df], message)
 
     def typed_submission(self, type, file, access_token):
         """
@@ -516,17 +542,32 @@ class CmdSubmit:
 
             if entity_id:
                 if type == 'dataset':
-                    study_id = self.args.study or input("Input study id to link this dataset: ").lower()
-                    self.link_dataset_to_study(entity_id, study_id, access_token)
-
+                    if self.args.study is not None:
+                        study_id = self.args.study
+                        self.link_dataset_to_study(entity_id, study_id, access_token)
+                    else:
+                        link_to_study = input("Do you want to link this dataset to a study? "
+                                              "(yes/no): ").lower()
+                        if link_to_study == 'yes':
+                            study_id = input("Input study id: ").lower()
+                            self.link_dataset_to_study(entity_id, study_id, access_token)
                 elif type == 'biomaterial':
-                    dataset_id = self.args.dataset or input("Input dataset id to link this biomaterial: ").lower()
-                    self.link_biomaterial_to_dataset(entity_id, dataset_id, access_token)
+                    if self.args.dataset is not None:
+                        dataset_id = self.args.dataset
+                        self.link_biomaterial_to_dataset(entity_id, dataset_id, access_token)
+                    else:
+                        link_to_dataset = input("Do you want to link this biomaterial to a "
+                                                "dataset? (yes/no): ").lower()
+                        if link_to_dataset == 'yes':
+                            dataset_id = input("Input dataset id: ").lower()
 
-                    process_id = self.args.process
-                    if process_id:
+                            self.link_biomaterial_to_dataset(entity_id, dataset_id, access_token)
+
+                    # Linking biomaterial to process
+                    if self.args.process is not None:
+                        process_id = self.args.process
+
                         self.link_biomaterial_to_process(entity_id, process_id, access_token)
-
                 return True, entity_id
         else:
             print("Unsupported type")

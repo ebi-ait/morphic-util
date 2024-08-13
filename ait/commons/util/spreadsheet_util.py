@@ -37,16 +37,17 @@ class OrphanedEntityError(Exception):
 
 
 class CellLine:
-    def __init__(self, biomaterial_id, description, derived_accession,
-                 clone_id, protocol_id, zygosity, cell_type, id):
+    def __init__(self, biomaterial_id, description, derived_from_accession,
+                 clone_id, protocol_id, zygosity, cell_type, expression_alteration_id, id):
         self.biomaterial_id = biomaterial_id
         self.description = description
-        self.derived_accession = derived_accession
+        self.derived_from_accession = derived_from_accession
         self.clone_id = clone_id
         self.protocol_id = protocol_id
         self.zygosity = zygosity
         self.cell_type = cell_type
         self.differentiated_cell_lines = []
+        self.expression_alteration_id = expression_alteration_id
         self.id = id
 
     def add_differentiated_cell_line(self, differentiated_cell_line):
@@ -60,11 +61,51 @@ class CellLine:
             "content": {
                 "biomaterial_id": self.biomaterial_id,
                 "description": self.description,
-                "derived_accession": self.derived_accession,
+                "derived_from_accession": self.derived_from_accession,
                 "clone_id": self.clone_id,
                 "protocol_id": self.protocol_id,
                 "zygosity": self.zygosity,
-                "cell_type": self.cell_type
+                "cell_type": self.cell_type,
+                "expression_alteration_id": self.expression_alteration_id
+            }
+        }
+
+
+class ExpressionAlterationStrategy:
+    def __init__(self, expression_alteration_id, protocol_id, allele_specific, altered_gene_symbols, altered_gene_ids,
+                 targeted_genomic_region, expected_alteration_type, sgrna_target,
+                 protocol_method_text, altered_locus, guide_sequence, id):
+        self.expression_alteration_id = expression_alteration_id
+        self.protocol_id = protocol_id
+        self.allele_specific = allele_specific
+        self.altered_gene_symbols = altered_gene_symbols
+        self.altered_gene_ids = altered_gene_ids
+        self.targeted_genomic_region = targeted_genomic_region
+        self.expected_alteration_type = expected_alteration_type
+        self.sgrna_target = sgrna_target
+        self.protocol_method_text = protocol_method_text
+        self.altered_locus = altered_locus
+        self.guide_sequence = guide_sequence
+        self.id = id
+
+    def __repr__(self):
+        return json.dumps(self.to_dict(), indent=2)
+
+    def to_dict(self):
+        return {
+            "content": {
+                "expression_alteration_id": self.expression_alteration_id,
+                "protocol_id": self.protocol_id,
+                "allele_specific": self.allele_specific,
+                "altered_gene_symbols": self.altered_gene_symbols,
+                "altered_gene_ids": self.altered_gene_ids,
+                "targeted_genomic_region": self.targeted_genomic_region,
+                "expected_alteration_type": self.expected_alteration_type,
+                "sgrna_target": self.sgrna_target,
+                "protocol_method_text": self.protocol_method_text,
+                "altered_locus": self.altered_locus,
+                "guide_sequence": self.guide_sequence,
+                "id": self.id
             }
         }
 
@@ -444,6 +485,29 @@ class SpreadsheetSubmitter:
         xls = pd.ExcelFile(self.file_path, engine='openpyxl')
         return xls.sheet_names
 
+    def input_file_to_data_frames(self, sheet_name, action):
+        if action.upper() == 'MODIFY':
+            skip_rows = 0
+        else:
+            skip_rows = 3
+
+        # Load the Excel file to retrieve all sheet names
+        with pd.ExcelFile(self.file_path, engine='openpyxl') as xls:
+            # Trim spaces from sheet names
+            sheet_names = {sheet.strip(): sheet for sheet in xls.sheet_names}
+
+        # Attempt to find the trimmed sheet name in the list
+        trimmed_sheet_name = sheet_name.strip()
+
+        if trimmed_sheet_name in sheet_names:
+            # Read the sheet using the original sheet name (with spaces if they existed)
+            df = pd.read_excel(self.file_path, sheet_name=sheet_names[trimmed_sheet_name], engine='openpyxl',
+                               skiprows=skip_rows)
+        else:
+            raise ValueError(f"Sheet '{sheet_name}' not found in the spreadsheet.")
+
+        return df
+
     def parse_cell_lines(self, sheet_name, action, errors):
         """
         Parses data related to cell lines from a specified sheet in the Excel file.
@@ -452,8 +516,6 @@ class SpreadsheetSubmitter:
         -----------
         sheet_name : str
             The name of the sheet containing cell line data.
-        column_mapping : dict
-            A dictionary mapping column names in the sheet to expected attribute names.
 
         Returns:
         --------
@@ -462,77 +524,74 @@ class SpreadsheetSubmitter:
             - list of CellLine objects parsed from the specified sheet.
             - pd.DataFrame with the parsed data.
         """
-        if action.upper() == 'MODIFY':
-            skip_rows = 0
-        else:
-            skip_rows = 3
-
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
+        df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         df.columns = df.columns.str.strip()
-        # df = df.rename(columns=column_mapping)
-
-        # Remove unnamed columns (columns without headers)
-        # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
         if 'cell_line.biomaterial_core.biomaterial_id' not in df.columns:
-            # raise KeyError("The column 'cell_line.biomaterial_core.biomaterial_id' does not exist.")
-            errors.append("The column 'cell_line.biomaterial_core.biomaterial_id' does not exist in Cell line sheet. "
-                          "The rest of the file will not be processed")
+            errors.append(
+                "The column 'cell_line.biomaterial_core.biomaterial_id' does not exist in the Cell line sheet. "
+                "The rest of the file will not be processed")
+            return [], df
 
         # Filter rows where biomaterial_id is not null
         df = df[df['cell_line.biomaterial_core.biomaterial_id'].notna()]
-
+        # Replace invalid float values with None
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-
-        # Define columns to check for values starting with 'ABC' or 'XYZ'
+        # Define columns to check for invalid starting values
         cols_to_check = ['cell_line.biomaterial_core.biomaterial_id']
-
-        # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
-        mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
-            ('FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
-             'cell_line.biomaterial_core.biomaterial_id'))).all(axis=1)
-
-        # Apply the mask to filter out rows
+        invalid_start_values = (
+            'FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
+            'cell_line.biomaterial_core.biomaterial_id'
+        )
+        # Filter out rows with invalid starting values
+        mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(invalid_start_values)).all(axis=1)
         df_filtered = df[mask]
+        # Check for a unique value in 'cell_line.derived_cell_line_accession'
+        derived_col = 'cell_line.derived_cell_line_accession'
 
-        # Check for mandatory fields and create CellLine objects
+        if derived_col in df_filtered.columns:
+            parent_cell_line_names = df_filtered[derived_col].dropna().unique()
+
+            if len(parent_cell_line_names) != 1:
+                errors.append(
+                    f"The column '{derived_col}' must have the same value across all rows. Found values: {parent_cell_line_names}")
+
+                return [], df
+
+        # Process rows to create CellLine objects
         cell_lines = []
+
         for _, row in df_filtered.iterrows():
             biomaterial_id = row['cell_line.biomaterial_core.biomaterial_id']
-            derived_accession = row.get('cell_line.derived_cell_line_accession')
+            derived_from_accession = row.get('cell_line.derived_cell_line_accession')
             cell_type = row.get('cell_line.type')
+            # expression_alteration_id = row.get('expression_alteration_id')
 
-            # Check if biomaterial_id is null
+            # Error handling for missing mandatory fields
             if pd.isnull(biomaterial_id):
                 errors.append("Biomaterial ID cannot be null in any row of the Cell line sheet.")
-                # raise MissingMandatoryFieldError("Biomaterial ID cannot be null.")
 
-            # Check if derived_accession and cell_type are present
-            if pd.isnull(derived_accession) or pd.isnull(cell_type):
-                errors.append(f"Mandatory fields (derived_accession, cell_type) are required for Cell line entity: "
-                              f"{biomaterial_id}")
-
-                """
-                raise MissingMandatoryFieldError(
-                    f"Mandatory fields (derived_accession, cell_type) are required. "
-                    f"{biomaterial_id}")
-                """
+            if any(pd.isnull(field) for field in [derived_from_accession, cell_type]):
+                errors.append(
+                    f"Mandatory fields (derived_accession, cell_type, expression_alteration_id) are required for Cell "
+                    f"line entity: {biomaterial_id}")
 
             cell_lines.append(
                 CellLine(
                     biomaterial_id=biomaterial_id,
                     description=row.get('cell_line.biomaterial_core.biomaterial_description'),
-                    derived_accession=derived_accession,
+                    derived_from_accession=derived_from_accession,
                     clone_id=row.get('cell_line.clone_id'),
                     protocol_id=row.get('gene_expression_alteration_protocol.protocol_core.protocol_id'),
                     zygosity=row.get('cell_line.zygosity'),
                     cell_type=cell_type,
+                    expression_alteration_id=None,
                     id=row.get('Id')
                 )
             )
 
-        return cell_lines, df_filtered
+        return cell_lines, df_filtered, parent_cell_line_names[0]
 
     def parse_differentiated_cell_lines(self, sheet_name, action, errors):
         """
@@ -550,15 +609,9 @@ class SpreadsheetSubmitter:
         list
             A list of DifferentiatedCellLine objects parsed from the specified sheet.
         """
-        if action.upper() == 'MODIFY':
-            skip_rows = 0
-        else:
-            skip_rows = 3
-
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
+        df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         df.columns = df.columns.str.strip()
         # df = df.rename(columns=column_mapping)
-
         # Remove unnamed columns (columns without headers)
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
@@ -566,25 +619,22 @@ class SpreadsheetSubmitter:
         if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
             errors.append("The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not "
                           "exist.")
+            return [], df
 
         # Filter rows where biomaterial_id is not null
         df = df[df['differentiated_cell_line.biomaterial_core.biomaterial_id'].notna()]
-
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['differentiated_cell_line.biomaterial_core.biomaterial_id']
-
         # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
             ('FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
              'differentiated_cell_line.biomaterial_core.biomaterial_id'))).all(axis=1)
-
         # Apply the mask to filter out rows
         df_filtered = df[mask]
-
         # Check for mandatory fields and create Differentiated CellLine objects
         differentiated_cell_lines = []
+
         for _, row in df_filtered.iterrows():
             differentiated_biomaterial_id = row['differentiated_cell_line.biomaterial_core.biomaterial_id']
             biomaterial_id = row.get('cell_line.biomaterial_core.biomaterial_id')
@@ -635,18 +685,11 @@ class SpreadsheetSubmitter:
         list
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
-        if action.upper() == 'MODIFY':
-            skip_rows = 0
-        else:
-            skip_rows = 3
-
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
+        df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         df.columns = df.columns.str.strip()
         # df = df.rename(columns=column_mapping)
-
         # Remove unnamed columns (columns without headers)
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
-
         # Check if the required column exists
         required_columns = [
             'library_preparation.biomaterial_core.biomaterial_id',
@@ -654,28 +697,27 @@ class SpreadsheetSubmitter:
             'differentiated_cell_line.biomaterial_core.biomaterial_id',
             'library_preparation_protocol.protocol_core.protocol_id'
         ]
+
         for col in required_columns:
             if col not in df.columns:
                 errors.append(f"The column '{col}' does not exist in the Library Preparation sheet.")
 
+                return [], df
+
         # Filter rows where biomaterial_id is not null
         df = df[df['library_preparation.biomaterial_core.biomaterial_id'].notna()]
-
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['library_preparation.biomaterial_core.biomaterial_id']
-
         # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
             ('FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
              'library_preparation.biomaterial_core.biomaterial_id'))).all(axis=1)
-
         # Apply the mask to filter out rows
         df_filtered = df[mask]
-
         # Check for mandatory fields and create Library Preparation objects
         library_preparations = []
+
         for _, row in df_filtered.iterrows():
             library_preparation_id = row['library_preparation.biomaterial_core.biomaterial_id']
             dissociation_protocol_id = row.get('dissociation_protocol.protocol_core.protocol_id')
@@ -733,12 +775,7 @@ class SpreadsheetSubmitter:
         list
             A list of SequencingFile objects parsed from the specified sheet.
         """
-        if action.upper() == 'MODIFY':
-            skip_rows = 0
-        else:
-            skip_rows = 3
-
-        df = pd.read_excel(self.file_path, sheet_name=sheet_name, engine='openpyxl', skiprows=skip_rows)
+        df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         df.columns = df.columns.str.strip()
         # df = df.rename(columns=column_mapping)
 
@@ -752,29 +789,29 @@ class SpreadsheetSubmitter:
             'sequencing_protocol.protocol_core.protocol_id',
             'sequence_file.read_index'
         ]
+
         for col in required_columns:
             if col not in df.columns:
                 errors.append(f"The column '{col}' does not exist in the Sequencing File sheet.")
 
+                return [], df
+
         # Filter rows where file_name is not null
         df = df[df['sequence_file.file_core.file_name'].notna()]
-
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-
         # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['sequence_file.file_core.file_name']
-
         # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
             ('FILL OUT INFORMATION BELOW THIS ROW', 'The name of the file.',
              'Include the file extension in the file name. For example: R1.fastq.gz; codebook.json',
              'sequence_file.file_core.file_name'))).all(axis=1)
-
         # Apply the mask to filter out rows
         df_filtered = df[mask]
 
         # Check for mandatory fields and create Sequencing file objects
         sequencing_files = []
+
         for _, row in df_filtered.iterrows():
             file_name = row['sequence_file.file_core.file_name']
             library_preparation_id = row.get('library_preparation.biomaterial_core.biomaterial_id')
@@ -809,6 +846,68 @@ class SpreadsheetSubmitter:
 
         return sequencing_files, df_filtered
 
+    def parse_expression_alteration(self, sheet_name, action, errors):
+        """
+        Parses data related to expression alterations from a specified sheet in the Excel file.
+
+        Parameters:
+        -----------
+        sheet_name : str
+            The name of the sheet containing expression alterations data.
+
+        Returns:
+        --------
+        list
+            A list of ExpressionAlterationStrategy objects parsed from the specified sheet.
+        """
+        df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
+        df.columns = df.columns.str.strip()
+        # Check if the required column exists
+        required_columns = ['expression_alteration_id']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+
+        if missing_columns:
+            errors.append(
+                f"The following required columns are missing in the Expression Alteration Strategy sheet: {', '.join(missing_columns)}")
+            return [], df  # Return early if required columns are missing
+
+        # Filter rows where 'expression_alteration_id' is not null
+        df = df[df['expression_alteration_id'].notna()]
+        # Replace invalid float values (e.g., NaN, infinite) with None
+        df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
+        # Define unwanted patterns
+        unwanted_patterns = (
+            'FILL OUT INFORMATION BELOW THIS ROW',
+            'A unique ID for the gene expression alteration instance..',
+            'ID should have no spaces. For example: JAXPE0001_MEIS1, MSKKI119_MEF2C, NWU_AID'
+        )
+        # Create a mask to filter out rows with unwanted starting values
+        mask = df['expression_alteration_id'].astype(str).str.startswith(unwanted_patterns)
+        df_filtered = df[~mask]
+
+        # Create ExpressionAlterationStrategy objects
+        expression_alterations = []
+
+        for _, row in df_filtered.iterrows():
+            expression_alterations.append(
+                ExpressionAlterationStrategy(
+                    expression_alteration_id=row.get('expression_alteration_id'),
+                    protocol_id=row.get('gene_expression_alteration_protocol.protocol_core.protocol_id'),
+                    allele_specific=row.get('gene_expression_alteration_protocol.allele_specific'),
+                    altered_gene_symbols=row.get('gene_expression_alteration_protocol.altered_gene_symbols'),
+                    altered_gene_ids=row.get('gene_expression_alteration_protocol.altered_gene_ids'),
+                    targeted_genomic_region=row.get('gene_expression_alteration_protocol.targeted_genomic_region'),
+                    expected_alteration_type=row.get('gene_expression_alteration_protocol.expected_alteration_type'),
+                    sgrna_target=row.get('gene_expression_alteration_protocol.crispr.sgrna_target'),
+                    protocol_method_text=row.get('gene_expression_alteration_protocol.method.text'),
+                    altered_locus=None,  # Placeholder if required
+                    guide_sequence=None,  # Placeholder if required
+                    id=row.get('Id')
+                )
+            )
+
+        return expression_alterations, df_filtered
+
     def get_cell_lines(self, sheet_name, action, errors):
         """
         Retrieves parsed cell lines data from a specified sheet in the Excel file.
@@ -825,8 +924,8 @@ class SpreadsheetSubmitter:
         list
             A list of CellLine objects parsed from the specified sheet.
         """
-        cell_lines, cell_lines_df = self.parse_cell_lines(sheet_name, action, errors)
-        return cell_lines, cell_lines_df
+        cell_lines, cell_lines_df, parent_cell_line_name = self.parse_cell_lines(sheet_name, action, errors)
+        return cell_lines, cell_lines_df, parent_cell_line_name
 
     def get_differentiated_cell_lines(self, sheet_name, action, errors):
         """
@@ -887,3 +986,7 @@ class SpreadsheetSubmitter:
         """
         sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, action, errors)
         return sequencing_files, df_filtered
+
+    def get_expression_alterations(self, sheet_name, action, errors):
+        expression_alterations, df_filtered = self.parse_expression_alteration(sheet_name, action, errors)
+        return expression_alterations, df_filtered

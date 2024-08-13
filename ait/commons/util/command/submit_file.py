@@ -31,10 +31,38 @@ def validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, da
             )
 
 
+def get_content(unique_value):
+    return {"content": unique_value}
+
+
+def create_expression_alterations(submission_instance, submission_envelope_id, access_token, expression_alterations):
+    for expression_alteration in expression_alterations:
+        # Submit the expression alteration and retrieve the ID
+        expression_alteration_id = submission_instance.use_existing_envelope_and_submit_entity(
+            'process',
+            expression_alteration.to_dict(),  # Convert the object to a dictionary for submission
+            submission_envelope_id,
+            access_token
+        )
+        # Set the retrieved ID in the ExpressionAlterationStrategy object
+        expression_alteration.id = expression_alteration_id
+
+    return expression_alterations
+
+
+def link_cell_line_parent_cell_line_expression_alretation(submission_instance,
+                                                          submission_envelope_id,
+                                                          access_token,
+                                                          parent_cell_line_id,
+                                                          created_expression_alterations,
+                                                          cell_lines):
+    pass
+
+
 class CmdSubmitFile:
-    base_url = 'https://api.ingest.dev.archive.morphic.bio'
-    submission_envelope_create_url = f"{base_url}/submissionEnvelopes/updateSubmissions"
-    submission_envelope_base_url = f"{base_url}/submissionEnvelopes"
+    BASE_URL = 'https://api.ingest.dev.archive.morphic.bio'
+    SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
+    SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
     def __init__(self, args):
         """
@@ -47,7 +75,7 @@ class CmdSubmitFile:
         self.access_token = get_profile('morphic-util').access_token
         self.user_profile = get_profile('morphic-util')
         self.aws = Aws(self.user_profile)
-        self.provider_api = APIProvider(self.base_url)
+        self.provider_api = APIProvider(self.BASE_URL)
         self.validation_errors = []
         self.submission_errors = []
 
@@ -83,13 +111,12 @@ class CmdSubmitFile:
         """
         submission_instance = CmdSubmit(self)
 
-        if self.action == 'delete' or self.action == 'DELETE':
+        if self.action.lower() == 'delete':
             self.file = None
             submission_instance.delete_dataset(self.dataset, self.access_token)
             return True, None
 
         list_instance = CmdList(self.aws, self.args)
-        upload_instance = CmdUpload(self.aws, self.args)
         list_of_files_in_upload_area = list_instance.list_bucket_contents_and_return(self.dataset, '')
 
         if self.file:
@@ -97,7 +124,11 @@ class CmdSubmitFile:
             parser = SpreadsheetSubmitter(self.file)
 
             # Parse different sections of the spreadsheet using defined column mappings
-            cell_lines, cell_lines_df = parser.get_cell_lines('Cell line', self.action, self.validation_errors)
+            expression_alterations, expression_alterations_df = (parser.get_expression_alterations
+                                                                 ('Expression alteration strategy',
+                                                                  self.action, self.validation_errors))
+            cell_lines, cell_lines_df, parent_cell_line_name = parser.get_cell_lines('Cell line', self.action,
+                                                                                     self.validation_errors)
             differentiated_cell_lines, differentiated_cell_lines_df = parser.get_differentiated_cell_lines(
                 'Differentiated cell line', self.action, self.validation_errors)
             merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines,
@@ -113,6 +144,7 @@ class CmdSubmitFile:
 
             merge_library_preparation_sequencing_file(library_preparations, sequencing_files,
                                                       self.validation_errors)
+            upload_instance = CmdUpload(self.aws, self.args)
 
             try:
                 if len(self.validation_errors) > 0:
@@ -125,11 +157,11 @@ class CmdSubmitFile:
                 print(e)
                 sys.exit(1)
 
-            if self.action == 'add' or self.action == 'ADD':
+            if self.action.lower() == 'add':
                 submission_envelope_response, status_code = submission_instance.create_new_submission_envelope(
-                    self.submission_envelope_create_url, access_token=self.access_token
+                    self.SUBMISSION_ENVELOPE_CREATE_URL, access_token=self.access_token
                 )
-                if status_code == 200 or status_code == 201:
+                if status_code in (200, 201):
                     self_url = submission_envelope_response['_links']['self']['href']
                     submission_envelope_id = get_id_from_url(self_url)
                     print(f"Submission envelope for this submission is: {submission_envelope_id}")
@@ -138,12 +170,31 @@ class CmdSubmitFile:
                         message = "Unauthorized, refresh your access token using the config option"
                         return False, message
                     else:
-                        return False, f"Encountered failure with {status_code}"
+                        return False, f"Encountered failure with status code {status_code}"
             else:
                 submission_envelope_id = None
 
             # Perform the submission and get the updated dataframes
             try:
+                parent_cell_line_id = (submission_instance.
+                                       use_existing_envelope_and_submit_entity('biomaterial',
+                                                                               get_content(
+                                                                                   parent_cell_line_name),
+                                                                               submission_envelope_id,
+                                                                               self.access_token))
+
+                created_expression_alterations = create_expression_alterations(submission_instance,
+                                                                               submission_envelope_id,
+                                                                               self.access_token,
+                                                                               expression_alterations)
+
+                link_cell_line_parent_cell_line_expression_alretation(submission_instance,
+                                                                      submission_envelope_id,
+                                                                      self.access_token,
+                                                                      parent_cell_line_id,
+                                                                      created_expression_alterations,
+                                                                      cell_lines)
+                # submission now
                 (
                     updated_cell_lines_df, updated_differentiated_cell_lines_df,
                     updated_library_preparations_df, updated_sequencing_files_df,
@@ -177,7 +228,9 @@ class CmdSubmitFile:
                                 f"The output file {output_file} was not created or cannot be found.")
 
                     except Exception as e:
-                        print(f"Failed to upload file {output_file}. Error: {e}")
+                        print(
+                            f"Failed to upload file {output_file}. Error: {e}, Refer dataset {self.dataset} for "
+                            f"tracing metadata")
                     return True, "SUBMISSION IS SUCCESSFUL."
                 else:
                     return self.delete_actions(submission_envelope_id,
@@ -188,8 +241,9 @@ class CmdSubmitFile:
 
     def delete_actions(self, submission_envelope_id, submission_instance, e):
         try:
-            print("SUBMISSION failed, rolling back")
-            print("SUBMISSION ERRORS are:")
+            print("SUBMISSION has failed, rolling back")
+            print("SUBMISSION ERRORS are listed below. Any metadata created will be deleted now, please wait until "
+                  "the clean-up finishes")
             print("\n".join(self.submission_errors))
             submission_instance.delete_submission(submission_envelope_id, self.access_token, True)
             submission_instance.delete_dataset(self.dataset, self.access_token)
@@ -199,4 +253,4 @@ class CmdSubmitFile:
             else:
                 return False, f"An error occurred: {str(e)}"
         except Exception as e:
-            print(f"Failed to rollback submission  {submission_envelope_id}")
+            print(f"Failed to rollback submission {submission_envelope_id}")

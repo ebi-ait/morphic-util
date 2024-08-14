@@ -526,6 +526,7 @@ class SpreadsheetSubmitter:
         """
         df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         df.columns = df.columns.str.strip()
+        parent_cell_line_names = []
 
         # Check if the required column exists
         if 'cell_line.biomaterial_core.biomaterial_id' not in df.columns:

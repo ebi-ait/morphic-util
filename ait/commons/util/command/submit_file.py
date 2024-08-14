@@ -17,7 +17,7 @@ from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter, ValidationEr
 
 
 # Define a class for handling submission of a command file
-def validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, dataset):
+def validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, dataset, errors):
     for sequencing_file in sequencing_files:
         match_found = False  # Flag to indicate if a match is found
 
@@ -27,7 +27,7 @@ def validate_sequencing_files(sequencing_files, list_of_files_in_upload_area, da
                 break  # Exit the inner loop if a match is found
 
         if not match_found:
-            raise Exception(
+            errors.append(
                 f"No matching file found for sequencing file: {sequencing_file.file_name} "
                 f"in the upload area for the dataset: {dataset}"
             )
@@ -238,7 +238,9 @@ class CmdSubmitFile:
 
     def _validate_and_upload(self, parsed_data, submission_instance, list_of_files_in_upload_area):
         """Validate the parsed data and upload the file."""
-        # validate_sequencing_files(parsed_data['sequencing_files'], list_of_files_in_upload_area, self.dataset)
+        validate_sequencing_files(parsed_data['sequencing_files'], list_of_files_in_upload_area, self.dataset,
+                                  self.validation_errors)
+
         try:
             # exit now if there are validation errors in the spreadsheet
             if self.validation_errors:

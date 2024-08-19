@@ -57,17 +57,26 @@ class CellLine:
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self):
+        content = {
+            "label": self.biomaterial_id,
+            "description": self.description,
+            "derived_from_cell_line": self.derived_from_accession,
+            "zygosity": self.zygosity,
+            "type": self.cell_type
+        }
+
+        # Only add optional/custom fields if they are provided
+        if self.clone_id:
+            content["clone_id"] = self.clone_id  # Not in schema, custom field
+
+        if self.protocol_id:
+            content["protocol_id"] = self.protocol_id  # Not in schema, custom field
+
+        if self.expression_alteration_id:
+            content["expression_alteration_id"] = self.expression_alteration_id  # Not in schema, custom field
+
         return {
-            "content": {
-                "biomaterial_id": self.biomaterial_id,
-                "description": self.description,
-                "derived_from_accession": self.derived_from_accession,
-                "clone_id": self.clone_id,
-                "protocol_id": self.protocol_id,
-                "zygosity": self.zygosity,
-                "cell_type": self.cell_type,
-                "expression_alteration_id": self.expression_alteration_id
-            }
+            "content": content
         }
 
 
@@ -94,7 +103,7 @@ class ExpressionAlterationStrategy:
     def to_dict(self):
         return {
             "content": {
-                "expression_alteration_id": self.expression_alteration_id,
+                "label": self.expression_alteration_id,
                 "protocol_id": self.protocol_id,
                 "allele_specific": self.allele_specific,
                 "altered_gene_symbols": self.altered_gene_symbols,
@@ -131,17 +140,24 @@ class DifferentiatedCellLine:
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self):
+        content = {
+            "label": self.biomaterial_id,
+            "description": self.description,
+            "timepoint_value": self.timepoint_value,
+            "timepoint_unit": self.timepoint_unit,
+            "terminally_differentiated": self.terminally_differentiated,
+            "model_system": self.model_system
+        }
+
+        # Only add optional/custom fields if they are provided
+        if self.input_biomaterial_id:
+            content["input_biomaterial_id"] = self.input_biomaterial_id  # Not in schema, custom field
+
+        if self.protocol_id:
+            content["protocol_id"] = self.protocol_id  # Not in schema, custom field
+
         return {
-            "content": {
-                "biomaterial_id": self.biomaterial_id,
-                "description": self.description,
-                "input_biomaterial_id": self.input_biomaterial_id,
-                "protocol_id": self.protocol_id,
-                "timepoint_value": self.timepoint_value,
-                "timepoint_unit": self.timepoint_unit,
-                "terminally_differentiated": self.terminally_differentiated,
-                "model_system": self.model_system
-            }
+            "content": content
         }
 
 
@@ -173,29 +189,35 @@ class LibraryPreparation:
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self):
-        # Replace NaN values and out-of-range float values with None
-        def convert_to_valid_json_value(obj):
-            if isinstance(obj, float):
-                if np.isnan(obj) or not np.isfinite(obj):
-                    return None
-            return obj
+        # Helper function to handle invalid JSON values
+        def convert_to_valid_json_value(value):
+            if isinstance(value, float) and (np.isnan(value) or not np.isfinite(value)):
+                return None
+            return value
+
+        content = {
+            "label": self.biomaterial_id,
+            "average_fragment_size": convert_to_valid_json_value(self.average_fragment_size),
+            "input_amount_value": convert_to_valid_json_value(self.input_amount_value),
+            "input_amount_unit": self.input_amount_unit,
+            "total_yield_value": convert_to_valid_json_value(self.final_yield_value),
+            "total_yield_unit": self.final_yield_unit,
+            "concentration_value": convert_to_valid_json_value(self.concentration_value),
+            "concentration_unit": self.concentration_unit,
+            "pcr_cycles": self.pcr_cycles,
+            "pcr_cycles_for_sample_index": convert_to_valid_json_value(self.pcr_cycles_for_sample_index)
+        }
+
+        # Add optional/custom fields if they are provided
+        if self.protocol_id:
+            content["protocol_id"] = self.protocol_id  # Not in schema, custom field
+        if self.dissociation_protocol_id:
+            content["dissociation_protocol_id"] = self.dissociation_protocol_id  # Not in schema, custom field
+        if self.differentiated_biomaterial_id:
+            content["differentiated_biomaterial_id"] = self.differentiated_biomaterial_id  # Not in schema, custom field
 
         return {
-            "content": {
-                "biomaterial_id": self.biomaterial_id,
-                "protocol_id": self.protocol_id,
-                "dissociation_protocol_id": self.dissociation_protocol_id,
-                "differentiated_biomaterial_id": self.differentiated_biomaterial_id,
-                "average_fragment_size": convert_to_valid_json_value(self.average_fragment_size),
-                "input_amount_value": convert_to_valid_json_value(self.input_amount_value),
-                "input_amount_unit": self.input_amount_unit,
-                "final_yield_value": convert_to_valid_json_value(self.final_yield_value),
-                "final_yield_unit": self.final_yield_unit,
-                "concentration_value": convert_to_valid_json_value(self.concentration_value),
-                "concentration_unit": self.concentration_unit,
-                "pcr_cycles": self.pcr_cycles,
-                "pcr_cycles_for_sample_index": convert_to_valid_json_value(self.pcr_cycles_for_sample_index)
-            }
+            "content": content
         }
 
 
@@ -204,39 +226,50 @@ class EntityType:
 
 
 class SequencingFile:
-    def __init__(self, file_name, library_preparation_id, sequencing_protocol_id, read_index, run_id, id):
+    def __init__(self, file_name, extension, read_index, lane_index=None, read_length=None, checksum=None,
+                 library_preparation_id=None, sequencing_protocol_id=None, run_id=None, id=None):
         self.file_name = file_name
-        self.library_preparation_id = library_preparation_id
-        self.sequencing_protocol_id = sequencing_protocol_id
+        self.extension = extension
         self.read_index = read_index
-        self.run_id = run_id
-        self.entity_type = EntityType.FILE
-        self.id = id
-        self.content = {
-            "file_name": self.file_name,
-            "library_preparation_id": self.library_preparation_id,
-            "sequencing_protocol_id": self.sequencing_protocol_id,
-            "read_index": self.read_index,
-            "run_id": self.run_id
-        }
-        self.set_file_name(file_name)
-        self.init_file()
+        self.lane_index = lane_index
+        self.read_length = read_length
+        self.checksum = checksum
+        self.library_preparation_id = library_preparation_id  # Custom field
+        self.sequencing_protocol_id = sequencing_protocol_id  # Custom field
+        self.run_id = run_id  # Custom field
+        self.id = id  # Custom field
 
     def __repr__(self):
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self):
-        return {
-            "content": self.content,
-            "fileName": self.file_name
+        # Helper function to handle invalid JSON values
+        def convert_to_valid_json_value(value):
+            if isinstance(value, float) and (np.isnan(value) or not np.isfinite(value)):
+                return None
+            return value
+
+        content = {
+            "label": self.file_name,
+            "extension": self.extension,
+            "read_index": self.read_index,
+            "lane_index": convert_to_valid_json_value(self.lane_index),
+            "read_length": convert_to_valid_json_value(self.read_length),
+            "checksum": self.checksum
         }
 
-    def set_file_name(self, file_name):
-        self.file_name = file_name
+        # Add optional/custom fields if they are provided
+        if self.library_preparation_id:
+            content["library_preparation_id"] = self.library_preparation_id  # Not in schema, custom field
+        if self.sequencing_protocol_id:
+            content["sequencing_protocol_id"] = self.sequencing_protocol_id  # Not in schema, custom field
+        if self.run_id:
+            content["run_id"] = self.run_id  # Not in schema, custom field
 
-    def init_file(self):
-        # Placeholder for any initialization logic required for the file
-        pass
+        return {
+            "content": content,
+            "fileName": self.file_name
+        }
 
 
 def find_orphans(source_entities, target_entities,
@@ -837,9 +870,13 @@ class SpreadsheetSubmitter:
             sequencing_files.append(
                 SequencingFile(
                     file_name=file_name,
+                    extension=None,
+                    read_index=read_index,
+                    lane_index=None,
+                    read_length=None,
+                    checksum=None,
                     library_preparation_id=library_preparation_id,
                     sequencing_protocol_id=sequencing_protocol_id,
-                    read_index=read_index,
                     run_id=row.get('sequence_file.run_id'),
                     id=row.get('Id')
                 )

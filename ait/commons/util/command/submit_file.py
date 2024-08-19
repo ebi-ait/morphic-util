@@ -237,10 +237,9 @@ class CmdSubmitFile:
             return None
 
     def _validate_and_upload(self, parsed_data, submission_instance, list_of_files_in_upload_area):
-        """Validate the parsed data and upload the file.
+        # Validate the parsed data and upload the file.
         validate_sequencing_files(parsed_data['sequencing_files'], list_of_files_in_upload_area, self.dataset,
                                   self.validation_errors)
-        """
 
         try:
             # exit now if there are validation errors in the spreadsheet

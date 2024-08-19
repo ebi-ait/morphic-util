@@ -5,13 +5,16 @@ import requests
 
 from ait.commons.util.aws_client import Aws, static_bucket_name
 from ait.commons.util.command.config import CmdConfig
-from ait.commons.util.command.create import CmdCreate
+from ait.commons.util.command.create import run
 from ait.commons.util.command.delete import CmdDelete
 from ait.commons.util.command.download import CmdDownload
 from ait.commons.util.command.list import CmdList
 from ait.commons.util.command.select import CmdSelect
+from ait.commons.util.command.submit import CmdSubmit
+from ait.commons.util.command.submit_file import CmdSubmitFile
 from ait.commons.util.command.sync import CmdSync
 from ait.commons.util.command.upload import CmdUpload
+from ait.commons.util.command.view import CmdView
 from ait.commons.util.local_state import get_bucket, set_attr, get_attr
 from ait.commons.util.settings import NAME, VERSION
 from ait.commons.util.user_profile import profile_exists, get_profile
@@ -35,6 +38,18 @@ class Cmd:
 
         if args.command == 'config':
             success, msg = CmdConfig(args).run()
+            print(msg)
+
+        elif args.command == 'submit':
+            success, msg = CmdSubmit(args).run()
+            print(msg)
+
+        elif args.command == 'submit-file':
+            success, msg = CmdSubmitFile(args).run()
+            print(msg)
+
+        elif args.command == 'view':
+            success, msg = CmdView(args).run()
             print(msg)
 
         else:
@@ -82,7 +97,7 @@ class Cmd:
 
     def execute(self, args):
         if args.command == 'create':
-            success, msg = CmdCreate(self.aws, args).run()
+            success, msg = run()
             self.exit(success, msg)
 
         elif args.command == 'select':

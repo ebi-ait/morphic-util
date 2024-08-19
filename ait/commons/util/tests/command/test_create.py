@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 from ait.commons.util.__main__ import parse_args
 from ait.commons.util.cmd import Cmd
-from ait.commons.util.command.create import CmdCreate
+from ait.commons.util.command.create import run
 
 
 class TestCreate(unittest.TestCase):
@@ -32,7 +32,7 @@ class TestCreate(unittest.TestCase):
         args = ['create', 'testUploadArea']
 
         # when
-        success, msg = CmdCreate(None, parse_args(args)).run()
+        success, msg = run()
 
         # then
         self.assertFalse(success)
@@ -56,7 +56,7 @@ class TestCreate(unittest.TestCase):
         args = ['create', 'testUploadArea']
 
         # when
-        success, msg = CmdCreate(self.aws_mock, parse_args(args)).run()
+        success, msg = run()
 
         # then
         self.assertFalse(success)
@@ -70,7 +70,7 @@ class TestCreate(unittest.TestCase):
         args = ['create', 'testUploadArea']
 
         # when
-        success, msg = CmdCreate(self.aws_mock, parse_args(args)).run()
+        success, msg = run()
 
         # then
         self.assertTrue(success)
@@ -88,7 +88,7 @@ class TestCreate(unittest.TestCase):
         args = ['create', upload_area_name, '-p', permission]
 
         # when
-        success, msg = CmdCreate(self.aws_mock, parse_args(args)).run()
+        success, msg = run()
 
         # then
         self.assertTrue(success)
@@ -103,7 +103,7 @@ class TestCreate(unittest.TestCase):
         # when
         with self.assertRaises(SystemExit) as error:
             parsed_args = parse_args(args)
-            success, msg = CmdCreate(self.aws_mock, parsed_args).run()
+            success, msg = run()
             self.assertFalse(parsed_args)
             self.assertFalse(success)
             self.assertFalse(msg)
@@ -133,7 +133,7 @@ class TestCreate(unittest.TestCase):
         self.client.put_object.side_effect = Mock(side_effect=Exception('Test'))
 
         # when
-        success, msg = CmdCreate(self.aws_mock, parse_args(args)).run()
+        success, msg = run()
 
         # then
         self.assertFalse(success)

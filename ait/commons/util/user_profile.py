@@ -9,8 +9,10 @@ class UserProfile:
         self.access_key = None
         self.secret_key = None
         self.session_token = None
+        self.access_token = None
         self.username = None
         self.password = None
+        self.idToken = None
         self.region = None
 
     def __repr__(self):
@@ -42,6 +44,7 @@ def get_profile(profile):
         user_profile.access_key = credentials[profile].get('aws_access_key_id')
         user_profile.secret_key = credentials[profile].get('aws_secret_access_key')
         user_profile.session_token = credentials[profile].get('aws_session_token')
+        user_profile.access_token = credentials[profile].get('aws_cognito_access_token')
         user_profile.username = credentials[profile].get('aws_cognito_username')
         user_profile.password = credentials[profile].get('aws_cognito_password')
 
@@ -57,7 +60,7 @@ def get_profile(profile):
     return user_profile
 
 
-def set_profile(profile, region, access_key, secret_key, session_token, username, password):
+def set_profile(profile, region, access_key, secret_key, session_token, access_token, username, password):
     """.aws/config
     [profile {profile}]
     region = {region}
@@ -91,6 +94,7 @@ def set_profile(profile, region, access_key, secret_key, session_token, username
         credentials.add_section(f'{profile}')
     credentials.set(f'{profile}', 'aws_cognito_username', username)
     credentials.set(f'{profile}', 'aws_cognito_password', password)
+    credentials.set(f'{profile}', 'aws_cognito_access_token', access_token)
 
     with open(AWS_CREDENTIALS_FILE, 'w') as out:
         credentials.write(out)

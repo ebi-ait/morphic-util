@@ -1,7 +1,5 @@
 import sys
-
 import boto3
-
 from ait.commons.util.settings import DEFAULT_PROFILE, DEFAULT_REGION, COGNITO_CLIENT_ID, COGNITO_IDENTITY_POOL_ID, \
     COGNITO_USER_POOL_ID
 from ait.commons.util.user_profile import set_profile
@@ -14,12 +12,11 @@ class AwsCognitoAuthenticator:
 
     def __init__(self, args):
         self.args = args
-        self.is_user = False  # not admin
+        self.is_user = True  # not admin
         self.user_dir_list = None
         self.center_name = None  # custom attribute DPC
 
-    def validate_cognito_identity(self, profile, username, password):
-
+    def is_registered_user(self, profile, username, password):
         try:
             profile = profile if profile else DEFAULT_PROFILE
 
@@ -64,7 +61,7 @@ class AwsCognitoAuthenticator:
 
                 if session_token:
                     set_profile(profile, DEFAULT_REGION, aws_cred['AccessKeyId'], aws_cred['SecretKey'],
-                                session_token, username, password)
+                                session_token, access_token, username, password)
 
                     return True
                 else:
@@ -74,8 +71,7 @@ class AwsCognitoAuthenticator:
         except Exception as e:
             return False
 
-    def get_secret_manager_client(self, username, password):
-
+    def secret_manager_client_instance(self, username, password):
         try:
             if username and password:
                 client = boto3.client("cognito-idp", region_name=DEFAULT_REGION, aws_access_key_id="NONE",
@@ -90,39 +86,13 @@ class AwsCognitoAuthenticator:
                 # Getting the user details.
                 access_token = response["AuthenticationResult"]["AccessToken"]
                 id_token = response["AuthenticationResult"]["IdToken"]
-
                 response = client.get_user(AccessToken=access_token)
-
                 username = response['Username']
-                user_attribute_list = response['UserAttributes']
 
                 if username.endswith('Admin') or username.endswith('admin'):
                     self.is_user = False
                 else:
                     self.is_user = True
-
-                for attr in user_attribute_list:
-                    if attr['Name'] == 'custom:DPC':
-                        self.center_name = attr['Value'].lower()
-
-                    if attr['Name'] == 'custom:directory_access':
-                        self.user_dir_list = attr['Value'].replace(" ", "").split(',')
-
-                        if self.user_dir_list is not None:
-                            self.user_dir_list = ['morphic-' + self.center_name + '/' + dataset_dir for dataset_dir in
-                                                  self.user_dir_list]
-
-                if self.is_user:
-                    if self.center_name is None:
-                        print('User does not have an assigned center name and therefore cannot perform any operations '
-                              'with this system')
-                        sys.exit(1)
-
-                    if self.user_dir_list is None:
-                        if self.is_user:
-                            print('User does not have access to any upload areas or to perform any operations with this'
-                                  'system')
-                            sys.exit(1)
 
                 identity = boto3.client('cognito-identity', region_name=DEFAULT_REGION)
 
@@ -156,7 +126,7 @@ class AwsCognitoAuthenticator:
         except Exception as e:
             return None
 
-    def is_valid_user(self):
+    def is_user(self):
         return self.is_user
 
     def get_user_dir_list(self):

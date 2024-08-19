@@ -1,6 +1,6 @@
 # morphic-util
 
-CLI tool for uploading data to the Morphic AWS S3 buckets.
+CLI tool for submitting analysis data and metadata
 
 # Users
 
@@ -9,8 +9,8 @@ CLI tool for uploading data to the Morphic AWS S3 buckets.
 Users need to have
 
 1. Basic command-line knowledge
-2. Python3.x installed on their machine
-3. AWS Cognito username and password
+2. Python 3.10 installed on their machine
+3. AWS Cognito username or email and password
 
 ## Install
 
@@ -35,8 +35,10 @@ optional arguments:
   --version, -v         show program's version number and exit
 
 command:
-  {config,create,select,list,upload,download,delete}
+  {config,submit,submit-file,create,select,list,upload,download,delete}
     config              configure AWS credentials
+    submit              submit your study, dataset or biomaterials metadata (incomplete as all metadata types is not supported yet, expected to be completed on August 2024)
+    submit-file         submit your metadata file containing your cell lines, differentiated cell lines, library preparations and sequencing files
     create              create an upload area (authorised users only)
     select              select or show the active upload area
     list                list contents of the area
@@ -79,18 +81,40 @@ positional arguments:
   password         AWS Cognito password
 ```
 
-The tool uses the profile name _hca-util_ in local AWS config files.
+The tool uses the profile name _morphic-util_ in local AWS config files.
+
+## `submit` command
+Submit your study and dataset metadata and create your AWS upload area for uploading data files
+
+```shell script
+positional arguments:
+$ morphic-util submit --type <TYPE> --file <PATH_TO_FILE>
+
+  --type         type of metadata being submitted (e.g. study or dataset)
+  --file         path to the file containing the metadata
+```
+
+## `submit-file` command
+Submit your study and dataset metadata and create your AWS upload area for uploading data files
+
+```shell script
+positional arguments:
+$ morphic-util submit-file --file <PATH_TO_FILE> --action <SUBMISSION_ACTION> --dataset <the analyis which has generated the data and the metadata>
+
+  --file         path to the file containing the metadata
+  --action       ADD, MODIFY or DELETE based on the type of submission
+  --dataset      the identifier for the analysis
+```
 
 ## `create` command
 
 Create an upload area/ project folder **(authorised users only)**
 
 ```shell script
-$ morphic-util create NAME DPC [-p {u,ud,ux,udx}]
+$ morphic-util create NAME [-p {u,ud,ux,udx}]
 
 positional arguments:
   NAME               name for the new area/ project folder
-  DPC                center name of the submitter
 
 optional arguments:
   -p {u,ud,ux,udx}   allowed actions (permissions) on new area. u for
@@ -160,6 +184,64 @@ positional arguments:
 optional arguments:
   -a                 delete all files from the area
   -d                 delete upload area and contents (authorised users only)
+```
+## Performing a submission
+### Authenticate
+```shell script
+$ morphic-util config username password
+
+positional arguments:
+  username         AWS Cognito username
+  password         AWS Cognito password
+```
+### Create your study
+```shell script
+positional arguments:
+$ morphic-util submit --type study --file <PATH_TO_STUDY_METADATA_FILE>
+
+  --type         type of metadata being submitted (here it is study)
+  --file         path to the file containing the metadata
+```
+### Create your dataset and link it to your study
+```shell script
+positional arguments:
+$ morphic-util submit --type dataset --file <PATH_TO_DATASET_METADATA_FILE> --study <STUDY_ID>
+
+  --type         type of metadata being submitted (here it is dataset)
+  --file         path to the file containing the metadata (optional)
+  --study        STUDY_ID obtained in the last step
+```
+### `select` your upload area to upload your data files (the upload area name is same as your DATASET_ID)
+Show or select the data file upload area
+```shell script
+$ morphic-util select AREA
+
+positional arguments:
+  AREA                upload area name (same as DATASET_ID obtained in the last step). 
+```
+### `upload` your data files
+Upload files to the selected area for the dataset
+```shell script
+$ morphic-util upload PATH [PATH ...] [-o]
+
+positional arguments:
+  PATH               valid file or directory
+
+optional arguments:
+  -o                  overwrite files with same names
+```
+### `list` uploaded data files to verify that data file upload has been successful
+```shell script
+$ morphic-util list
+```
+### `submit-file` command to submit your dataset metadata containing your biomaterials, processes, protocols and files
+```shell script
+positional arguments:
+$ morphic-util submit-file --file <PATH_TO_FILE> --action <SUBMISSION_ACTION> --dataset <the analyis which has generated the data and the metadata>
+
+  --file         path to the file containing the metadata
+  --action       ADD, MODIFY or DELETE based on the type of submission
+  --dataset      the identifier for the analysis
 ```
 
 # Developers

@@ -53,9 +53,14 @@ class CmdList:
                 self.print_area(selected_area, dict(name=n, perms=p))
 
                 file_count = 0
-                for k in self.list_area_contents(selected_area):
-                    print(k)
-                    if not k.endswith('/'):
+                contents = self.list_area_contents(selected_area)
+
+                for item in contents:
+                    key = item['key']
+                    hash_md5 = item['md5']
+
+                    print(f"{key} - {hash_md5}")
+                    if not key.endswith('/'):
                         file_count += 1
 
                 print_count(file_count)
@@ -113,7 +118,10 @@ class CmdList:
         for obj in bucket.objects.filter(Prefix=selected_area):
             k = obj.key
             if k != selected_area:
-                contents.append(k)
+                head_object_response = self.s3_cli.head_object(Bucket=self.aws.bucket_name, Key=k)
+                metadata = head_object_response.get('Metadata', {})
+                hash_md5 = metadata.get('md5', 'MD5 checksum not found')
+                contents.append({'key': k, 'md5': hash_md5})
 
         return contents
 

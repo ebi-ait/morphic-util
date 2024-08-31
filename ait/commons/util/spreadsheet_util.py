@@ -892,14 +892,29 @@ class SpreadsheetSubmitter:
         -----------
         sheet_name : str
             The name of the sheet containing expression alterations data.
+        action : str
+            The action to be performed on the data.
+        errors : list
+            A list to accumulate error messages.
 
         Returns:
         --------
-        list
-            A list of ExpressionAlterationStrategy objects parsed from the specified sheet.
+        tuple
+            A tuple containing:
+            - A list of ExpressionAlterationStrategy objects parsed from the specified sheet (if valid)
+            - The filtered DataFrame of the parsed data
+            - A boolean indicating whether the expression alteration strategy sheet exists and is valid
         """
-        df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
+        # Attempt to parse the input file into a DataFrame
+        try:
+            df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
+        except Exception as e:
+            errors.append(f"Missing sheet '{sheet_name}': {e}")
+            return [], None
+
+        # Strip whitespace from column names
         df.columns = df.columns.str.strip()
+
         # Check if the required column exists
         required_columns = ['expression_alteration_id']
         missing_columns = [col for col in required_columns if col not in df.columns]
@@ -907,23 +922,26 @@ class SpreadsheetSubmitter:
         if missing_columns:
             errors.append(
                 f"The following required columns are missing in the Expression Alteration Strategy sheet: {', '.join(missing_columns)}")
-            return [], df  # Return early if required columns are missing
+            return None, df, False  # Return if required columns are missing
 
         # Filter rows where 'expression_alteration_id' is not null
         df = df[df['expression_alteration_id'].notna()]
+
         # Replace invalid float values (e.g., NaN, infinite) with None
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-        # Define unwanted patterns
+
+        # Define unwanted patterns to filter out unwanted rows
         unwanted_patterns = (
             'FILL OUT INFORMATION BELOW THIS ROW',
             'A unique ID for the gene expression alteration instance..',
             'ID should have no spaces. For example: JAXPE0001_MEIS1, MSKKI119_MEF2C, NWU_AID'
         )
+
         # Create a mask to filter out rows with unwanted starting values
         mask = df['expression_alteration_id'].astype(str).str.startswith(unwanted_patterns)
         df_filtered = df[~mask]
 
-        # Create ExpressionAlterationStrategy objects
+        # Initialize the list of ExpressionAlterationStrategy objects
         expression_alterations = []
 
         for _, row in df_filtered.iterrows():
@@ -944,6 +962,7 @@ class SpreadsheetSubmitter:
                 )
             )
 
+        # Return the list of objects, the filtered DataFrame, and a flag indicating success
         return expression_alterations, df_filtered
 
     def get_cell_lines(self, sheet_name, action, errors):
@@ -981,9 +1000,8 @@ class SpreadsheetSubmitter:
         list
             A list of DifferentiatedCellLine objects parsed from the specified sheet.
         """
-        differentiated_cell_lines, differentiated_cell_lines_df = (self.
-                                                                   parse_differentiated_cell_lines
-                                                                   (sheet_name, action, errors))
+        differentiated_cell_lines, differentiated_cell_lines_df = self.parse_differentiated_cell_lines(sheet_name,
+                                                                                                       action, errors)
         return differentiated_cell_lines, differentiated_cell_lines_df
 
     def get_library_preparations(self, sheet_name, action, errors):

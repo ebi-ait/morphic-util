@@ -11,7 +11,7 @@ from ait.commons.util.user_profile import get_profile
 from ait.commons.util.provider_api_util import APIProvider
 
 
-def equality(cell_line, expression_alteration):
+def matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
     return expression_alteration.expression_alteration_id.replace(" ",
                                                                   "").strip() == cell_line.expression_alteration_id.replace(
         " ", "").strip()
@@ -273,8 +273,9 @@ class CmdSubmit:
             access_token
         )
 
-        self.link_cell_line_with_expression_alterations(access_token, cell_line, cell_line_entity_id,
-                                                        expression_alterations)
+        if expression_alterations is not None:
+            self.link_cell_line_with_expression_alterations(access_token, cell_line, cell_line_entity_id,
+                                                            expression_alterations)
 
         print(f"Linking Cell Line Biomaterial: {cell_line.biomaterial_id} to dataset {dataset_id}")
 
@@ -286,7 +287,7 @@ class CmdSubmit:
                                                    expression_alterations):
         for expression_alteration in expression_alterations:
             if cell_line.expression_alteration_id is not None:
-                if equality(cell_line, expression_alteration):
+                if matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
                     print(f"Linking cell line {cell_line_entity_id} "
                           f"as derived by process of {expression_alteration.expression_alteration_id}")
 
@@ -337,57 +338,121 @@ class CmdSubmit:
             return differentiated_cell_line_id
 
     def create_differentiated_cell_line_entity(self, access_token, cell_line_entity_id, dataset_id,
-                                               differentiated_cell_line,
-                                               submission_envelope_id):
-        print("Cell line has differentiated cell lines, creating differentiation process to link them")
+                                               differentiated_cell_line, submission_envelope_id):
+        """
+        Creates a Differentiated Cell Line entity and links it to the submission envelope.
 
-        differentiation_process_entity_id = self.create_process(access_token,
-                                                                dataset_id,
-                                                                get_process_content('differentiation'),
-                                                                submission_envelope_id)
-        print(f"Creating Differentiated Cell Line Biomaterial: {differentiated_cell_line.biomaterial_id} "
-              f"as a child of Cell line: {cell_line_entity_id}")
+        Parameters:
+        -----------
+        access_token : str
+            The authentication token.
+        cell_line_entity_id : str
+            The ID of the original cell line entity.
+        dataset_id : str
+            The dataset ID to link with.
+        differentiated_cell_line : object
+            The differentiated cell line object containing details for creation.
+        submission_envelope_id : str
+            The ID of the submission envelope.
 
-        differentiated_entity_id = self.create_child_biomaterial(
-            cell_line_entity_id,
-            differentiated_cell_line.to_dict(),
-            access_token
-        )
+        Returns:
+        --------
+        str
+            The ID of the created differentiated cell line entity.
+        """
 
-        print(f"Created Differentiated Cell Line Biomaterial: {differentiated_entity_id}")
-        print(f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} "
-              f"to envelope: {submission_envelope_id}")
+        # Create the differentiated cell line biomaterial
+        if cell_line_entity_id is not None:
+            print(f"Creating Differentiated Cell Line Biomaterial: {differentiated_cell_line.biomaterial_id} "
+                  f"as a child of Cell line: {cell_line_entity_id}")
+            differentiated_entity_id = self.create_child_biomaterial(
+                cell_line_entity_id,
+                differentiated_cell_line.to_dict(),
+                access_token
+            )
 
-        self.link_entity_to_envelope(
-            'biomaterial',
-            differentiated_entity_id,
-            submission_envelope_id,
-            access_token
-        )
+            print(f"Created Differentiated Cell Line Biomaterial: {differentiated_entity_id}")
+            print(f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} "
+                  f"to envelope: {submission_envelope_id}")
+
+            # Link the differentiated cell line entity to the submission envelope
+            self.link_entity_to_envelope(
+                'biomaterial',
+                differentiated_entity_id,
+                submission_envelope_id,
+                access_token
+            )
+        else:
+            print(f"Creating Differentiated Cell Line Biomaterial: {differentiated_cell_line.biomaterial_id}")
+            differentiated_entity_id = self.use_existing_envelope_and_submit_entity(
+                'biomaterial',
+                differentiated_cell_line.to_dict(),
+                submission_envelope_id,
+                access_token
+            )
 
         print(f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} "
               f"to dataset: {dataset_id}")
 
+        # Link the differentiated cell line to the dataset
         self.link_to_dataset('biomaterial', dataset_id,
                              differentiated_entity_id, access_token)
 
-        print(f"Linking Cell Line Biomaterial: {cell_line_entity_id} as "
-              f"input to process : {differentiation_process_entity_id}")
-
-        self.perform_hal_linkage(
-            f"{self.base_url}/biomaterials/{cell_line_entity_id}/inputToProcesses",
-            differentiation_process_entity_id, 'processes', access_token
-        )
-
-        print(f"Linking Differentiated cell line Biomaterial: {differentiated_entity_id} "
-              f"as derived by process : {differentiation_process_entity_id}")
-
-        self.perform_hal_linkage(
-            f"{self.base_url}/biomaterials/{differentiated_entity_id}/derivedByProcesses",
-            differentiation_process_entity_id, 'processes', access_token
-        )
-
         return differentiated_entity_id
+
+    def link_cell_line_and_differentiated_cell_line(self, access_token, cell_line_entity_id, differentiated_entity_id,
+                                                    dataset_id, submission_envelope_id, action):
+        """
+        Creates and links the differentiation process between the original cell line and the differentiated cell line.
+
+        Parameters:
+        -----------
+        access_token : str
+            The authentication token.
+        cell_line_entity_id : str
+            The ID of the original cell line entity.
+        differentiated_entity_id : str
+            The ID of the differentiated cell line entity.
+        dataset_id : str
+            The dataset ID to link with.
+        submission_envelope_id : str
+            The ID of the submission envelope.
+
+        Returns:
+        --------
+        str
+            The ID of the differentiation process entity created.
+        """
+        if action.lower() != 'modify':
+            print("Cell line has differentiated cell lines, creating differentiation process to link them")
+
+            # Create a differentiation process entity
+            differentiation_process_entity_id = self.create_process(
+                access_token,
+                dataset_id,
+                get_process_content('differentiation'),
+                submission_envelope_id
+            )
+
+            print(
+                f"Linking Cell Line Biomaterial: {cell_line_entity_id} as input to process : {differentiation_process_entity_id}")
+
+            # Link the cell line entity as input to the differentiation process
+            self.perform_hal_linkage(
+                f"{self.base_url}/biomaterials/{cell_line_entity_id}/inputToProcesses",
+                differentiation_process_entity_id, 'processes', access_token
+            )
+
+            print(f"Linking Differentiated cell line Biomaterial: {differentiated_entity_id} "
+                  f"as derived by process : {differentiation_process_entity_id}")
+
+            # Link the differentiated cell line entity as derived by the differentiation process
+            self.perform_hal_linkage(
+                f"{self.base_url}/biomaterials/{differentiated_entity_id}/derivedByProcesses",
+                differentiation_process_entity_id, 'processes', access_token
+            )
+
+            return differentiation_process_entity_id
 
     def handle_library_preparation(self, differentiated_entity_id, library_preparation,
                                    library_preparations_df, submission_envelope_id,
@@ -577,6 +642,7 @@ class CmdSubmit:
                               cell_lines,
                               expression_alterations,
                               cell_lines_df,
+                              differentiated_cell_lines,
                               differentiated_cell_lines_df,
                               library_preparations_df,
                               sequencing_file_df,
@@ -605,44 +671,37 @@ class CmdSubmit:
         try:
             for cell_line in cell_lines:
 
-                cell_line_entity_id = self.handle_cell_line(cell_line,
-                                                            expression_alterations,
-                                                            cell_lines_df,
+                if cell_line.id is not None:
+                    cell_line_entity_id = cell_line.id
+
+                    for differentiated_cell_line in cell_line.differentiated_cell_lines:
+                        differentiated_cell_line_entity_id = differentiated_cell_line.id
+
+                        self.link_cell_line_and_differentiated_cell_line(access_token, cell_line_entity_id,
+                                                                         differentiated_cell_line_entity_id,
+                                                                         dataset_id, submission_envelope_id
+                                                                         , action)
+
+                        for library_preparation in differentiated_cell_line.library_preparations:
+                            library_preparation_entity_id = self.handle_library_preparation(
+                                differentiated_cell_line_entity_id,
+                                library_preparation,
+                                library_preparations_df,
+                                submission_envelope_id,
+                                dataset_id,
+                                access_token,
+                                action,
+                                errors)
+
+                            for sequencing_file in library_preparation.sequencing_files:
+                                self.handle_sequencing_file(library_preparation_entity_id,
+                                                            sequencing_file,
+                                                            sequencing_file_df,
                                                             submission_envelope_id,
                                                             dataset_id,
                                                             access_token,
                                                             action,
                                                             errors)
-
-                for differentiated_cell_line in cell_line.differentiated_cell_lines:
-                    differentiated_entity_id = self.handle_differentiated_cell_line(cell_line_entity_id,
-                                                                                    differentiated_cell_line,
-                                                                                    differentiated_cell_lines_df,
-                                                                                    submission_envelope_id,
-                                                                                    dataset_id,
-                                                                                    access_token,
-                                                                                    action,
-                                                                                    errors)
-
-                    for library_preparation in differentiated_cell_line.library_preparations:
-                        library_preparation_entity_id = self.handle_library_preparation(differentiated_entity_id,
-                                                                                        library_preparation,
-                                                                                        library_preparations_df,
-                                                                                        submission_envelope_id,
-                                                                                        dataset_id,
-                                                                                        access_token,
-                                                                                        action,
-                                                                                        errors)
-
-                        for sequencing_file in library_preparation.sequencing_files:
-                            self.handle_sequencing_file(library_preparation_entity_id,
-                                                        sequencing_file,
-                                                        sequencing_file_df,
-                                                        submission_envelope_id,
-                                                        dataset_id,
-                                                        access_token,
-                                                        action,
-                                                        errors)
 
             message = 'SUCCESS'
         except Exception as e:

@@ -175,13 +175,18 @@ class CmdSubmitFile:
         cell_lines_df = parsed_data['cell_lines_df']
         differentiated_cell_lines = parsed_data['differentiated_cell_lines']
         differentiated_cell_lines_df = parsed_data['differentiated_cell_lines_df']
+        library_preparations = parsed_data['library_preparations']
+        library_preparations_df = parsed_data['library_preparations_df']
+        sequencing_files = parsed_data['sequencing_files']
+        sequencing_files_df = parsed_data['sequencing_files_df']
 
         # TODO: Handle expression alterations in MODIFY
+        created_expression_alterations = []
+        
         if self._is_add_action():
-            self._create_submission_envelope(submission_instance)
+            self._create_submission_envelope()
 
             parent_cell_line_id = None
-            created_expression_alterations = []
 
             if parent_cell_line_name is not None:
                 print(f"Creating parental cell line with name {parent_cell_line_name}")
@@ -199,47 +204,44 @@ class CmdSubmitFile:
                     submission_instance, self.access_token, parent_cell_line_id, created_expression_alterations
                 )
 
-            created_cell_lines = []
+        created_cell_lines = []
 
-            if cell_lines and cell_lines_df is not None:
-                created_cell_lines, cell_lines_df = self._create_cell_lines(
-                    submission_instance, cell_lines, cell_lines_df)
+        if cell_lines and cell_lines_df is not None:
+            created_cell_lines, cell_lines_df = self._create_cell_lines(
+                submission_instance, cell_lines, cell_lines_df, created_expression_alterations)
 
-            created_differentiated_cell_lines = []
+        created_differentiated_cell_lines = []
 
-            if differentiated_cell_lines and differentiated_cell_lines_df is not None:
-                created_differentiated_cell_lines, differentiated_cell_lines_df = self._create_differentiated_cell_lines(
-                    submission_instance, differentiated_cell_lines, differentiated_cell_lines_df)
+        if differentiated_cell_lines and differentiated_cell_lines_df is not None:
+            created_differentiated_cell_lines, differentiated_cell_lines_df = self._create_differentiated_cell_lines(
+                submission_instance, differentiated_cell_lines, differentiated_cell_lines_df)
 
-            updated_dfs, message = self._perform_main_submission(submission_instance, created_cell_lines,
-                                                                 cell_lines_df, created_differentiated_cell_lines,
-                                                                 differentiated_cell_lines_df, parsed_data)
+        created_library_preparations = []
 
-            if message == 'SUCCESS':
-                self._save_and_upload_results(updated_dfs, expression_alterations_df)
-            else:
-                return self.delete_actions(self.submission_envelope_id, submission_instance, None)
-        elif self._is_modify_action():
-            created_cell_lines = []
+        if library_preparations and library_preparations_df is not None:
+            created_library_preparations, library_preparations_df = self._create_library_preparations(
+                submission_instance, library_preparations, library_preparations_df)
 
-            if cell_lines and cell_lines_df is not None:
-                created_cell_lines, cell_lines_df = self._create_cell_lines(
-                    submission_instance, cell_lines, cell_lines_df)
+        created_sequencing_files = []
 
-            created_differentiated_cell_lines = []
+        if sequencing_files and sequencing_files_df is not None:
+            created_sequencing_files, sequencing_files_df = self._create_sequencing_files(
+                submission_instance, sequencing_files, sequencing_files_df)
 
-            if differentiated_cell_lines and differentiated_cell_lines_df is not None:
-                created_differentiated_cell_lines, differentiated_cell_lines_df = self._create_differentiated_cell_lines(
-                    submission_instance, differentiated_cell_lines, differentiated_cell_lines_df)
+        updated_dfs, message = self._establish_links(submission_instance,
+                                                     created_cell_lines,
+                                                     cell_lines_df,
+                                                     created_differentiated_cell_lines,
+                                                     differentiated_cell_lines_df,
+                                                     created_library_preparations,
+                                                     library_preparations_df,
+                                                     created_sequencing_files,
+                                                     sequencing_files_df)
 
-            updated_dfs, message = self._perform_main_submission(submission_instance, created_cell_lines,
-                                                                 cell_lines_df, created_differentiated_cell_lines,
-                                                                 differentiated_cell_lines_df, parsed_data)
-
-            if message == 'SUCCESS':
-                self._save_and_upload_results(updated_dfs, expression_alterations_df)
-            else:
-                return self.delete_actions(self.submission_envelope_id, submission_instance, None)
+        if message == 'SUCCESS':
+            self._save_and_upload_results(updated_dfs, expression_alterations_df)
+        else:
+            return self.delete_actions(self.submission_envelope_id, submission_instance, None)
 
     def _parse_spreadsheet(self, parser):
         try:
@@ -330,7 +332,7 @@ class CmdSubmitFile:
         """Check if the current action is 'MODIFY'."""
         return self.action.lower() == 'modify'
 
-    def _create_submission_envelope(self, submission_instance):
+    def _create_submission_envelope(self):
         """Create a new submission envelope."""
         submission_envelope_response, status_code = create_new_submission_envelope(
             self.SUBMISSION_ENVELOPE_CREATE_URL, access_token=self.access_token
@@ -355,9 +357,9 @@ class CmdSubmitFile:
             expression_alterations, expression_alterations_df
         )
 
-    def _create_cell_lines(self, submission_instance, cell_lines, cell_lines_df):
+    def _create_cell_lines(self, submission_instance, cell_lines, cell_lines_df, expression_alterations):
         for cell_line in cell_lines:
-            cell_line_entity_id = submission_instance.handle_cell_line(cell_line, None, cell_lines_df,
+            cell_line_entity_id = submission_instance.handle_cell_line(cell_line, expression_alterations, cell_lines_df,
                                                                        self.submission_envelope_id, self.dataset,
                                                                        self.access_token, self.action,
                                                                        self.submission_errors)
@@ -380,16 +382,64 @@ class CmdSubmitFile:
 
         return differentiated_cell_lines, differentiated_cell_lines_df
 
-    def _perform_main_submission(self, submission_instance, created_cell_lines, cell_lines_df,
-                                 created_differentiated_cell_lines, differentiated_cell_lines_df, parsed_data):
+    def _create_library_preparations(self, submission_instance, library_preparations,
+                                     library_preparations_df):
+        for library_preparation in library_preparations:
+            library_preparation_entity_id = submission_instance.handle_library_preparation(None,
+                                                                                           library_preparation,
+                                                                                           library_preparations_df,
+                                                                                           self.submission_envelope_id,
+                                                                                           self.dataset,
+                                                                                           self.access_token,
+                                                                                           self.action,
+                                                                                           self.submission_errors)
+            library_preparation.id = library_preparation_entity_id
+
+        return library_preparations, library_preparations_df
+
+    def _create_sequencing_files(self, submission_instance, sequencing_files,
+                                 sequencing_files_df):
+        for sequencing_file in sequencing_files:
+            sequencing_file_entity_id = submission_instance.handle_sequencing_file(None,
+                                                                                   sequencing_file,
+                                                                                   sequencing_files_df,
+                                                                                   self.submission_envelope_id,
+                                                                                   self.dataset,
+                                                                                   self.access_token,
+                                                                                   self.action,
+                                                                                   self.submission_errors)
+            sequencing_file.id = sequencing_file_entity_id
+
+        return sequencing_files, sequencing_files_df
+
+    def _establish_links(self,
+                         submission_instance,
+                         created_cell_lines,
+                         cell_lines_df,
+                         created_differentiated_cell_lines,
+                         differentiated_cell_lines_df,
+                         created_library_preparations,
+                         library_preparations_df,
+                         created_sequencing_files,
+                         sequencing_files_df):
         """Perform the main submission."""
         # Unpack the returned values into a list and the message separately
-        updated_dfs, message = submission_instance.multi_type_submission(
-            created_cell_lines, parsed_data['expression_alterations'], cell_lines_df,
-            created_differentiated_cell_lines, differentiated_cell_lines_df, parsed_data['library_preparations_df'],
-            parsed_data['sequencing_files_df'], self.submission_envelope_id,
-            self.dataset, self.access_token, self.action, self.submission_errors
+        updated_dfs, message = submission_instance.establish_links(
+            created_cell_lines,
+            cell_lines_df,
+            created_differentiated_cell_lines,
+            differentiated_cell_lines_df,
+            created_library_preparations,
+            library_preparations_df,
+            created_sequencing_files,
+            sequencing_files_df,
+            self.submission_envelope_id,
+            self.dataset,
+            self.access_token,
+            self.action,
+            self.submission_errors
         )
+
         return updated_dfs, message
 
     def _save_and_upload_results(self, updated_dfs, expression_alteration_df):

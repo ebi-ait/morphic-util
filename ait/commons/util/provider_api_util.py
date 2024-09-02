@@ -5,7 +5,7 @@ class APIProvider:
     def __init__(self, base_url):
         self.base_url = base_url
 
-    def send_request(self, method, url, access_token, params=None, data=None, data_type_in_hal_link=None):
+    def request(self, method, url, access_token, params=None, data=None, data_type_in_hal_link=None):
         """
         Sends an HTTP request to the specified URL with the given method.
 
@@ -74,18 +74,18 @@ class APIProvider:
             # Return the JSON-parsed response data for other successful requests
             return response.json()
 
-    def put_to_provider_api(self, url, access_token):
-        return self.send_request('PUT', url, access_token)
+    def put(self, url, access_token):
+        return self.request('PUT', url, access_token)
 
-    def get_to_provider_api(self, url, access_token):
-        return self.send_request('GET', url, access_token)
+    def get(self, url, access_token):
+        return self.request('GET', url, access_token)
 
-    def delete_to_provider_api_including_linked_entities(self, url, access_token, delete_linked_entities=False):
+    def delete_with_relations(self, url, access_token, delete_linked_entities=False):
         params = {'deleteLinkedEntities': str(delete_linked_entities).lower()}
-        return self.send_request('DELETE', url, access_token, params=params)
+        return self.request('DELETE', url, access_token, params=params)
 
-    def delete_to_provider_api(self, url, access_token):
-        return self.send_request('DELETE', url, access_token)
+    def delete(self, url, access_token):
+        return self.request('DELETE', url, access_token)
 
-    def post_to_provider_api(self, url, data_type_in_hal_link, data, access_token):
-        return self.send_request('POST', url, access_token, data=data, data_type_in_hal_link=data_type_in_hal_link)
+    def post(self, url, data_type_in_hal_link, data, access_token):
+        return self.request('POST', url, access_token, data=data, data_type_in_hal_link=data_type_in_hal_link)

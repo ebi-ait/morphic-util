@@ -182,7 +182,7 @@ class CmdSubmitFile:
 
         # TODO: Handle expression alterations in MODIFY
         created_expression_alterations = []
-        
+
         if self._is_add_action():
             self._create_submission_envelope()
 
@@ -245,26 +245,54 @@ class CmdSubmitFile:
 
     def _parse_spreadsheet(self, parser):
         try:
+            tab_names = parser.list_sheets()
+            cell_line_sheet_name = None
+            differentiated_cell_line_sheet_name = None
+
+            if "Cell line" in tab_names:
+                cell_line_sheet_name = "Cell line"
+            elif "Clonal cell line" in tab_names:
+                cell_line_sheet_name = "Clonal cell line"
+            else:
+                self.validation_errors.append("Spreadsheet must contain a "
+                                              "'Cell line' or 'Clonal cell line' sheet.")
+
+            if "Differentiated cell line" in tab_names:
+                differentiated_cell_line_sheet_name = "Differentiated cell line"
+            # elif "Undifferentiated product" in tab_names:
+            #  differentiated_cell_line_sheet_name = "Undifferentiated product"
+            elif "Differentiated product" in tab_names:
+                differentiated_cell_line_sheet_name = "Differentiated product"
+            else:
+                self.validation_errors.append("Spreadsheet must contain a "
+                                              "'Differentiated cell line' or 'Undifferentiated product' "
+                                              "or 'Differentiated product' sheet.")
+
             """Parse the spreadsheet into different sections."""
             expression_alterations, expression_alterations_df = parser.get_expression_alterations(
                 'Expression alteration strategy', self.action, self.validation_errors
             )
+
             cell_lines, cell_lines_df, parent_cell_line_name = parser.get_cell_lines(
-                'Cell line', self.action, self.validation_errors
+                cell_line_sheet_name, self.action, self.validation_errors
             )
+
             differentiated_cell_lines, differentiated_cell_lines_df = parser.get_differentiated_cell_lines(
-                'Differentiated cell line', self.action, self.validation_errors
+                differentiated_cell_line_sheet_name, self.action, self.validation_errors
             )
+
             merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines, self.validation_errors)
 
             library_preparations, library_preparations_df = parser.get_library_preparations(
                 'Library preparation', self.action, self.validation_errors
             )
+
             merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines, library_preparations,
                                                                    self.validation_errors)
             sequencing_files, sequencing_files_df = parser.get_sequencing_files(
                 'Sequence file', self.action, self.validation_errors
             )
+
             merge_library_preparation_sequencing_file(library_preparations, sequencing_files, self.validation_errors)
 
             return {

@@ -1,3 +1,4 @@
+import hashlib
 import os
 import filetype
 
@@ -7,6 +8,16 @@ from ait.commons.util.local_state import get_selected_area
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from ait.commons.util.progress_bar import ProgressBar
+
+
+def compute_md5(file_path):
+    """Compute the MD5 hash of the file."""
+    hash_md5 = hashlib.md5()
+
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
 
 
 class CmdUpload:
@@ -21,6 +32,9 @@ class CmdUpload:
         self.files = []
 
     def upload_file(self, data_file, key):
+        hash_md5 = compute_md5(data_file)
+
+        print(f"MD5 hash of {data_file} is {hash_md5}")
 
         file_size = os.path.getsize(data_file)
 
@@ -44,7 +58,9 @@ class CmdUpload:
             s3.Bucket(self.aws.bucket_name).upload_file(Filename=data_file,
                                                         Key=key,
                                                         Callback=ProgressBar(target=data_file, total=file_size),
-                                                        ExtraArgs={'ContentType': content_type}
+                                                        ExtraArgs={'ContentType': content_type,
+                                                                   'Metadata': {'md5': hash_md5}
+                                                                   }
                                                         )
 
     def upload_files(self, data_files, prefix):

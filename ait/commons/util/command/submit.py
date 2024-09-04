@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from urllib.parse import urlparse
 
+from ait.commons.util.spreadsheet_util import SubmissionError
 from ait.commons.util.user_profile import get_profile
 from ait.commons.util.provider_api_util import APIProvider
 
@@ -216,9 +217,15 @@ class CmdSubmit:
         """
         return self.typed_submission(self.type, self.file, self.access_token)
 
-    def handle_cell_line(self, cell_line, expression_alterations, cell_lines_df,
-                         submission_envelope_id, dataset_id,
-                         access_token, action, errors):
+    def handle_cell_line(self,
+                         cell_line,
+                         expression_alterations,
+                         cell_lines_df,
+                         submission_envelope_id,
+                         dataset_id,
+                         access_token,
+                         action,
+                         errors):
         """
         Submits a cell line as a biomaterial entity to a specified submission envelope.
 
@@ -234,22 +241,34 @@ class CmdSubmit:
         - cell_line_entity_id: Entity ID of the submitted or modified cell line biomaterial.
         """
         if action.lower() == 'modify':
-            success = self.patch_entity('biomaterial', cell_line.id, cell_line.to_dict(), access_token)
-            if success:
-                print(f"Updated cell line: {cell_line.id} / {cell_line.biomaterial_id}")
-                update_dataframe(cell_lines_df, cell_line.id, cell_line.biomaterial_id,
-                                 'cell_line.biomaterial_core.biomaterial_id')
-            else:
+            try:
+                success = self.patch_entity('biomaterial', cell_line.id, cell_line.to_dict(), access_token)
+                if success:
+                    print(f"Updated cell line: {cell_line.id} / {cell_line.biomaterial_id}")
+                    update_dataframe(cell_lines_df, cell_line.id, cell_line.biomaterial_id,
+                                     'cell_line.biomaterial_core.biomaterial_id')
+                    return cell_line.id
+                else:
+                    errors.append(f"Failed to update cell line: {cell_line.id} / {cell_line.biomaterial_id}")
+                    raise SubmissionError(errors)
+            except Exception as e:
                 errors.append(f"Failed to update cell line: {cell_line.id} / {cell_line.biomaterial_id}")
-            return cell_line.id
+                raise SubmissionError(errors, e)
         else:
-            cell_line_entity_id = self.create_cell_line_entity(cell_line, expression_alterations,
-                                                               submission_envelope_id, dataset_id, access_token)
-            update_dataframe(cell_lines_df, cell_line_entity_id, cell_line.biomaterial_id,
-                             'cell_line.biomaterial_core.biomaterial_id')
-            return cell_line_entity_id
+            try:
+                cell_line_entity_id = self.create_cell_line_entity(cell_line, expression_alterations,
+                                                                   submission_envelope_id, dataset_id, access_token)
+                update_dataframe(cell_lines_df, cell_line_entity_id, cell_line.biomaterial_id,
+                                 'cell_line.biomaterial_core.biomaterial_id')
+                return cell_line_entity_id
+            except Exception as e:
+                errors.append(f"Failed to create cell line: {cell_line.biomaterial_id}")
+                raise SubmissionError(errors, e)
 
-    def create_cell_line_entity(self, cell_line, expression_alterations, submission_envelope_id,
+    def create_cell_line_entity(self,
+                                cell_line,
+                                expression_alterations,
+                                submission_envelope_id,
                                 dataset_id,
                                 access_token):
         """
@@ -284,7 +303,10 @@ class CmdSubmit:
 
         return cell_line_entity_id
 
-    def link_cell_line_with_expression_alterations(self, access_token, cell_line, cell_line_entity_id,
+    def link_cell_line_with_expression_alterations(self,
+                                                   access_token,
+                                                   cell_line,
+                                                   cell_line_entity_id,
                                                    expression_alterations):
         for expression_alteration in expression_alterations:
             if cell_line.expression_alteration_id is not None:
@@ -297,9 +319,15 @@ class CmdSubmit:
                         expression_alteration.id, 'processes', access_token
                     )
 
-    def handle_differentiated_cell_line(self, cell_line_entity_id, differentiated_cell_line,
-                                        differentiated_cell_lines_df, submission_envelope_id, dataset_id,
-                                        access_token, action, errors):
+    def handle_differentiated_cell_line(self,
+                                        cell_line_entity_id,
+                                        differentiated_cell_line,
+                                        differentiated_cell_lines_df,
+                                        submission_envelope_id,
+                                        dataset_id,
+                                        access_token,
+                                        action,
+                                        errors):
         """
         Handles a single differentiated cell line associated with a given cell line.
 
@@ -314,32 +342,48 @@ class CmdSubmit:
         - access_token: Access token for authentication and authorization.
         """
         if action.lower() == 'modify':
-            success = self.patch_entity('biomaterial', differentiated_cell_line.id,
-                                        differentiated_cell_line.to_dict(),
-                                        access_token)
-            if success:
-                print(f"Updated differentiated cell line: {differentiated_cell_line.id} / "
-                      f"{differentiated_cell_line.biomaterial_id}")
+            try:
+                success = self.patch_entity('biomaterial', differentiated_cell_line.id,
+                                            differentiated_cell_line.to_dict(),
+                                            access_token)
+                if success:
+                    print(f"Updated differentiated cell line: {differentiated_cell_line.id} / "
+                          f"{differentiated_cell_line.biomaterial_id}")
 
-                update_dataframe(differentiated_cell_lines_df, differentiated_cell_line.id,
-                                 differentiated_cell_line.biomaterial_id,
-                                 'differentiated_cell_line.biomaterial_core.biomaterial_id')
-            else:
+                    update_dataframe(differentiated_cell_lines_df, differentiated_cell_line.id,
+                                     differentiated_cell_line.biomaterial_id,
+                                     'differentiated_cell_line.biomaterial_core.biomaterial_id')
+                    return differentiated_cell_line.id
+                else:
+                    errors.append(f"Failed to update differentiated cell line: {differentiated_cell_line.id} / "
+                                  f"{differentiated_cell_line.biomaterial_id}")
+                    raise SubmissionError(errors)
+            except Exception as e:
                 errors.append(f"Failed to update differentiated cell line: {differentiated_cell_line.id} / "
                               f"{differentiated_cell_line.biomaterial_id}")
-            return differentiated_cell_line.id
-        else:
-            differentiated_cell_line_id = self.create_differentiated_cell_line_entity(access_token, cell_line_entity_id,
-                                                                                      dataset_id,
-                                                                                      differentiated_cell_line,
-                                                                                      submission_envelope_id)
-            update_dataframe(differentiated_cell_lines_df, differentiated_cell_line_id,
-                             differentiated_cell_line.biomaterial_id,
-                             'differentiated_cell_line.biomaterial_core.biomaterial_id')
-            return differentiated_cell_line_id
+                raise SubmissionError(errors, e)
 
-    def create_differentiated_cell_line_entity(self, access_token, cell_line_entity_id, dataset_id,
-                                               differentiated_cell_line, submission_envelope_id):
+        else:
+            try:
+                differentiated_cell_line_id = self.create_differentiated_cell_line_entity(access_token,
+                                                                                          cell_line_entity_id,
+                                                                                          dataset_id,
+                                                                                          differentiated_cell_line,
+                                                                                          submission_envelope_id)
+                update_dataframe(differentiated_cell_lines_df, differentiated_cell_line_id,
+                                 differentiated_cell_line.biomaterial_id,
+                                 'differentiated_cell_line.biomaterial_core.biomaterial_id')
+                return differentiated_cell_line_id
+            except Exception as e:
+                errors.append(f"Failed to create differentiated cell line: {differentiated_cell_line.biomaterial_id}")
+                raise SubmissionError(errors, e)
+
+    def create_differentiated_cell_line_entity(self,
+                                               access_token,
+                                               cell_line_entity_id,
+                                               dataset_id,
+                                               differentiated_cell_line,
+                                               submission_envelope_id):
         """
         Creates a Differentiated Cell Line entity and links it to the submission envelope.
 
@@ -401,8 +445,14 @@ class CmdSubmit:
 
         return differentiated_entity_id
 
-    def link_cell_line_and_differentiated_cell_line(self, access_token, cell_line_entity_id, differentiated_entity_id,
-                                                    dataset_id, submission_envelope_id, action):
+    def link_cell_line_and_differentiated_cell_line(self,
+                                                    access_token,
+                                                    cell_line_entity_id,
+                                                    differentiated_entity_id,
+                                                    dataset_id,
+                                                    submission_envelope_id,
+                                                    action,
+                                                    errors):
         """
         Creates and links the differentiation process between the original cell line and the differentiated cell line.
 
@@ -425,40 +475,52 @@ class CmdSubmit:
             The ID of the differentiation process entity created.
         """
         if action.lower() != 'modify':
-            print(f"Cell line {cell_line_entity_id} has differentiated cell lines, creating differentiation process "
-                  f"to link them")
+            try:
+                print(
+                    f"Cell line {cell_line_entity_id} has differentiated cell lines, creating differentiation process "
+                    f"to link them")
 
-            # Create a differentiation process entity
-            differentiation_process_entity_id = self.create_process(
-                access_token,
-                dataset_id,
-                get_process_content('differentiation'),
-                submission_envelope_id
-            )
+                # Create a differentiation process entity
+                differentiation_process_entity_id = self.create_process(
+                    access_token,
+                    dataset_id,
+                    get_process_content('differentiation'),
+                    submission_envelope_id
+                )
 
-            print(
-                f"Linking Cell Line Biomaterial: {cell_line_entity_id} as input to process : {differentiation_process_entity_id}")
+                print(
+                    f"Linking Cell Line Biomaterial: {cell_line_entity_id} as input to process : {differentiation_process_entity_id}")
 
-            # Link the cell line entity as input to the differentiation process
-            self.perform_hal_linkage(
-                f"{self.base_url}/biomaterials/{cell_line_entity_id}/inputToProcesses",
-                differentiation_process_entity_id, 'processes', access_token
-            )
+                # Link the cell line entity as input to the differentiation process
+                self.perform_hal_linkage(
+                    f"{self.base_url}/biomaterials/{cell_line_entity_id}/inputToProcesses",
+                    differentiation_process_entity_id, 'processes', access_token
+                )
 
-            print(f"Linking Differentiated cell line Biomaterial: {differentiated_entity_id} "
-                  f"as derived by process : {differentiation_process_entity_id}")
+                print(f"Linking Differentiated cell line Biomaterial: {differentiated_entity_id} "
+                      f"as derived by process : {differentiation_process_entity_id}")
 
-            # Link the differentiated cell line entity as derived by the differentiation process
-            self.perform_hal_linkage(
-                f"{self.base_url}/biomaterials/{differentiated_entity_id}/derivedByProcesses",
-                differentiation_process_entity_id, 'processes', access_token
-            )
+                # Link the differentiated cell line entity as derived by the differentiation process
+                self.perform_hal_linkage(
+                    f"{self.base_url}/biomaterials/{differentiated_entity_id}/derivedByProcesses",
+                    differentiation_process_entity_id, 'processes', access_token
+                )
 
-            return differentiation_process_entity_id
+                return differentiation_process_entity_id
+            except Exception as e:
+                errors.append(
+                    f"Failed to update relations between Cell line {cell_line_entity_id} and Differentiated cell line {differentiated_entity_id}")
+                raise SubmissionError(errors, e)
 
-    def handle_library_preparation(self, differentiated_entity_id, library_preparation,
-                                   library_preparations_df, submission_envelope_id,
-                                   dataset_id, access_token, action, errors):
+    def handle_library_preparation(self,
+                                   differentiated_entity_id,
+                                   library_preparation,
+                                   library_preparations_df,
+                                   submission_envelope_id,
+                                   dataset_id,
+                                   access_token,
+                                   action,
+                                   errors):
         """
         Handles a single library preparation associated with a given differentiated cell line.
 
@@ -472,33 +534,46 @@ class CmdSubmit:
         - access_token: Access token for authentication and authorization.
         """
         if action.lower() == 'modify':
-            success = self.patch_entity('biomaterial', library_preparation.id,
-                                        library_preparation.to_dict(),
-                                        access_token)
-            if success:
-                print(f"Updated library preparation biomaterial: {library_preparation.id} / "
-                      f"{library_preparation.biomaterial_id}")
+            try:
+                success = self.patch_entity('biomaterial', library_preparation.id,
+                                            library_preparation.to_dict(),
+                                            access_token)
+                if success:
+                    print(f"Updated library preparation biomaterial: {library_preparation.id} / "
+                          f"{library_preparation.biomaterial_id}")
 
-                update_dataframe(library_preparations_df, library_preparation.id,
-                                 library_preparation.biomaterial_id,
-                                 'library_preparation.biomaterial_core.biomaterial_id')
-            else:
+                    update_dataframe(library_preparations_df, library_preparation.id,
+                                     library_preparation.biomaterial_id,
+                                     'library_preparation.biomaterial_core.biomaterial_id')
+                    return library_preparation.id
+                else:
+                    errors.append(f"Failed to update library preparation biomaterial: {library_preparation.id} / "
+                                  f"{library_preparation.biomaterial_id}")
+                    raise SubmissionError(errors)
+            except Exception as e:
                 errors.append(f"Failed to update library preparation biomaterial: {library_preparation.id} / "
                               f"{library_preparation.biomaterial_id}")
-
-            return library_preparation.id
+                raise SubmissionError(errors, e)
         else:
-            library_preparation_entity_id = self.create_library_preparation_entity(access_token, dataset_id,
-                                                                                   differentiated_entity_id,
-                                                                                   library_preparation,
-                                                                                   submission_envelope_id)
-            update_dataframe(library_preparations_df, library_preparation_entity_id,
-                             library_preparation.biomaterial_id,
-                             'library_preparation.biomaterial_core.biomaterial_id')
+            try:
+                library_preparation_entity_id = self.create_library_preparation_entity(access_token, dataset_id,
+                                                                                       differentiated_entity_id,
+                                                                                       library_preparation,
+                                                                                       submission_envelope_id)
+                update_dataframe(library_preparations_df, library_preparation_entity_id,
+                                 library_preparation.biomaterial_id,
+                                 'library_preparation.biomaterial_core.biomaterial_id')
 
-            return library_preparation_entity_id
+                return library_preparation_entity_id
+            except Exception as e:
+                errors.append(f"Failed to create library preparation biomaterial: {library_preparation.biomaterial_id}")
+                raise SubmissionError(errors, e)
 
-    def create_library_preparation_entity(self, access_token, dataset_id, differentiated_entity_id, library_preparation,
+    def create_library_preparation_entity(self,
+                                          access_token,
+                                          dataset_id,
+                                          differentiated_entity_id,
+                                          library_preparation,
                                           submission_envelope_id):
         """
         Creates a Library Preparation entity for the Differentiated Cell Line and links it to the submission envelope and dataset.
@@ -566,7 +641,8 @@ class CmdSubmit:
                                                     library_preparation_entity_id,
                                                     dataset_id,
                                                     submission_envelope_id,
-                                                    action):
+                                                    action,
+                                                    errors):
         """
         Links the Differentiated Cell Line to the Library Preparation through a library preparation process.
 
@@ -589,38 +665,45 @@ class CmdSubmit:
             The ID of the library preparation process entity created.
         """
         if action.lower() != 'modify':
-            print(f"Differentiated cell line {differentiated_entity_id} has library preparations, creating library "
-                  f"preparation process to link them")
+            try:
+                print(f"Differentiated cell line {differentiated_entity_id} has library preparations, creating library "
+                      f"preparation process to link them")
 
-            # Create a library preparation process entity
-            library_preparation_process_entity_id = self.create_process(
-                access_token,
-                dataset_id,
-                get_process_content('library_preparation'),
-                submission_envelope_id
-            )
+                # Create a library preparation process entity
+                library_preparation_process_entity_id = self.create_process(
+                    access_token,
+                    dataset_id,
+                    get_process_content('library_preparation'),
+                    submission_envelope_id
+                )
 
-            print(
-                f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} as input to library "
-                f"preparation process")
+                print(
+                    f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} as input to library "
+                    f"preparation process")
 
-            # Link the differentiated cell line entity as input to the library preparation process
-            self.perform_hal_linkage(
-                f"{self.base_url}/biomaterials/{differentiated_entity_id}/inputToProcesses",
-                library_preparation_process_entity_id, 'processes', access_token
-            )
+                # Link the differentiated cell line entity as input to the library preparation process
+                self.perform_hal_linkage(
+                    f"{self.base_url}/biomaterials/{differentiated_entity_id}/inputToProcesses",
+                    library_preparation_process_entity_id, 'processes', access_token
+                )
 
-            print(
-                f"Linking Library Preparation Biomaterial: {library_preparation_entity_id} as derived by library "
-                f"preparation process")
+                print(
+                    f"Linking Library Preparation Biomaterial: {library_preparation_entity_id} as derived by library "
+                    f"preparation process")
 
-            # Link the library preparation entity as derived by the library preparation process
-            self.perform_hal_linkage(
-                f"{self.base_url}/biomaterials/{library_preparation_entity_id}/derivedByProcesses",
-                library_preparation_process_entity_id, 'processes', access_token
-            )
+                # Link the library preparation entity as derived by the library preparation process
+                self.perform_hal_linkage(
+                    f"{self.base_url}/biomaterials/{library_preparation_entity_id}/derivedByProcesses",
+                    library_preparation_process_entity_id, 'processes', access_token
+                )
 
-            return library_preparation_process_entity_id
+                return library_preparation_process_entity_id
+            except Exception as e:
+                errors.append(
+                    f"Failed to update relations between Differentiated Cell line "
+                    f"{differentiated_entity_id} and Library preparation"
+                    f" {library_preparation_entity_id}")
+                raise SubmissionError(errors, e)
 
     def handle_sequencing_file(self, library_preparation_entity_id, sequencing_file,
                                sequencing_file_df, submission_envelope_id, dataset_id,
@@ -637,32 +720,41 @@ class CmdSubmit:
         - access_token: Access token for authentication and authorization.
         """
         if action.lower() == 'modify':
-            success = self.patch_entity('file', sequencing_file.id,
-                                        sequencing_file.to_dict(),
-                                        access_token)
+            try:
+                success = self.patch_entity('file', sequencing_file.id,
+                                            sequencing_file.to_dict(),
+                                            access_token)
 
-            if success:
-                print(f"Updated sequencing file: {sequencing_file.id} / "
-                      f"{sequencing_file.file_name}")
+                if success:
+                    print(f"Updated sequencing file: {sequencing_file.id} / "
+                          f"{sequencing_file.file_name}")
 
-                update_dataframe(sequencing_file_df, sequencing_file.id,
+                    update_dataframe(sequencing_file_df, sequencing_file.id,
+                                     sequencing_file.file_name,
+                                     'sequence_file.file_core.file_name')
+                    return sequencing_file.id
+                else:
+                    errors.append(
+                        f"Failed to update sequencing file: {sequencing_file.id} / {sequencing_file.file_name}")
+                    raise SubmissionError(errors)
+            except Exception as e:
+                errors.append(f"Failed to update sequencing file: {sequencing_file.id} / {sequencing_file.file_name}")
+                raise SubmissionError(errors, e)
+        else:
+            try:
+                sequencing_file_entity_id = self.create_sequencing_file_entity(access_token,
+                                                                               dataset_id,
+                                                                               library_preparation_entity_id,
+                                                                               sequencing_file,
+                                                                               submission_envelope_id)
+                update_dataframe(sequencing_file_df, sequencing_file_entity_id,
                                  sequencing_file.file_name,
                                  'sequence_file.file_core.file_name')
-            else:
-                errors.append(f"Failed to update sequencing file: {sequencing_file.id} / {sequencing_file.file_name}")
 
-            return sequencing_file.id
-        else:
-            sequencing_file_entity_id = self.create_sequencing_file_entity(access_token,
-                                                                           dataset_id,
-                                                                           library_preparation_entity_id,
-                                                                           sequencing_file,
-                                                                           submission_envelope_id)
-            update_dataframe(sequencing_file_df, sequencing_file_entity_id,
-                             sequencing_file.file_name,
-                             'sequence_file.file_core.file_name')
-
-            return sequencing_file_entity_id
+                return sequencing_file_entity_id
+            except Exception as e:
+                errors.append(f"Failed to create Sequencing file: {sequencing_file.file_name}")
+                raise SubmissionError(errors, e)
 
     def create_sequencing_file_entity(self, access_token, dataset_id, library_preparation_entity_id, sequencing_file,
                                       submission_envelope_id):
@@ -711,7 +803,8 @@ class CmdSubmit:
                                                      sequencing_file_entity_id,
                                                      dataset_id,
                                                      submission_envelope_id,
-                                                     action):
+                                                     action,
+                                                     errors):
         """
         Links the Library Preparation to the Sequencing File through a sequencing process.
 
@@ -734,34 +827,41 @@ class CmdSubmit:
             The ID of the sequencing process entity created.
         """
         if action.lower() != 'modify':
-            print(f"Library preparation {library_preparation_entity_id} has generated sequencing files."
-                  f"Creating sequencing process to link the sequencing file")
+            try:
+                print(f"Library preparation {library_preparation_entity_id} has generated sequencing files."
+                      f"Creating sequencing process to link the sequencing file")
 
-            # Create a sequencing process entity
-            sequencing_process_entity_id = self.create_process(access_token,
-                                                               dataset_id,
-                                                               get_process_content('sequencing'),
-                                                               submission_envelope_id)
+                # Create a sequencing process entity
+                sequencing_process_entity_id = self.create_process(access_token,
+                                                                   dataset_id,
+                                                                   get_process_content('sequencing'),
+                                                                   submission_envelope_id)
 
-            print(
-                f"Linking Library preparation Biomaterial: {library_preparation_entity_id} as input to process: {sequencing_process_entity_id}")
+                print(
+                    f"Linking Library preparation Biomaterial: {library_preparation_entity_id} as input to process: {sequencing_process_entity_id}")
 
-            # Link the library preparation entity as input to the sequencing process
-            self.perform_hal_linkage(
-                f"{self.base_url}/biomaterials/{library_preparation_entity_id}/inputToProcesses",
-                sequencing_process_entity_id, 'processes', access_token
-            )
+                # Link the library preparation entity as input to the sequencing process
+                self.perform_hal_linkage(
+                    f"{self.base_url}/biomaterials/{library_preparation_entity_id}/inputToProcesses",
+                    sequencing_process_entity_id, 'processes', access_token
+                )
 
-            print(
-                f"Linking Sequencing file: {sequencing_file_entity_id} as derived by process: {sequencing_process_entity_id}")
+                print(
+                    f"Linking Sequencing file: {sequencing_file_entity_id} as derived by process: {sequencing_process_entity_id}")
 
-            # Link the sequencing file entity as derived by the sequencing process
-            self.perform_hal_linkage(
-                f"{self.base_url}/files/{sequencing_file_entity_id}/derivedByProcesses",
-                sequencing_process_entity_id, 'processes', access_token
-            )
+                # Link the sequencing file entity as derived by the sequencing process
+                self.perform_hal_linkage(
+                    f"{self.base_url}/files/{sequencing_file_entity_id}/derivedByProcesses",
+                    sequencing_process_entity_id, 'processes', access_token
+                )
 
-            return sequencing_process_entity_id
+                return sequencing_process_entity_id
+            except Exception as e:
+                errors.append(
+                    f"Failed to update relations between Library Preparation "
+                    f"{library_preparation_entity_id} and Sequencing file"
+                    f" {sequencing_file_entity_id}")
+                raise SubmissionError(errors, e)
 
     def create_process(self, access_token, dataset_id, process_data, submission_envelope_id):
         process_entity_id = self.use_existing_envelope_and_submit_entity(
@@ -818,7 +918,8 @@ class CmdSubmit:
                                                                          differentiated_cell_line.id,
                                                                          dataset_id,
                                                                          submission_envelope_id,
-                                                                         action)
+                                                                         action,
+                                                                         errors)
             for differentiated_cell_line in differentiated_cell_lines:
                 for library_preparation in library_preparations:
                     if differentiated_cell_line.biomaterial_id == library_preparation.differentiated_biomaterial_id:
@@ -828,7 +929,8 @@ class CmdSubmit:
                             library_preparation.id,
                             dataset_id,
                             submission_envelope_id,
-                            action)
+                            action,
+                            errors)
 
             for library_preparation in library_preparations:
                 for sequencing_file in sequencing_files:
@@ -838,18 +940,19 @@ class CmdSubmit:
                                                                           sequencing_file.id,
                                                                           dataset_id,
                                                                           submission_envelope_id,
-                                                                          action)
+                                                                          action,
+                                                                          errors)
 
             message = 'SUCCESS'
         except Exception as e:
             message = f"An error occurred: {str(e)}"
             errors.append(message)
-            traceback.print_exc()
+            raise SubmissionError(message, e)
             # Set DataFrames to None in case of an error
-            cell_lines_df = None
-            differentiated_cell_lines_df = None
-            library_preparations_df = None
-            sequencing_files_df = None
+            # cell_lines_df = None
+            # differentiated_cell_lines_df = None
+            # library_preparations_df = None
+            # sequencing_files_df = None
 
         return ([cell_lines_df,
                  differentiated_cell_lines_df,

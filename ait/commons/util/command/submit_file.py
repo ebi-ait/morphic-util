@@ -234,7 +234,7 @@ class CmdSubmitFile:
                 return self._delete_actions(self.submission_envelope_id, submission_instance, None)
         except ValidationError as e:
             print(f"Validation Error: {e.errors}")
-            self._delete_actions(self.submission_envelope_id, submission_instance, e)
+            # self._delete_actions(self.submission_envelope_id, submission_instance, e)
             sys.exit(1)
         except SubmissionError as e:
             print(f"Submission Error: {e.errors}")
@@ -389,9 +389,10 @@ class CmdSubmitFile:
                     sys.exit(1)
             else:
                 # Print the error message
-                print(f"Validation Error: {e.errors}")
+                # print(f"Validation Error: {e.errors}")
                 # Exit the program with a non-zero status code to indicate an error
-                sys.exit(1)
+                # sys.exit(1)
+                raise ValidationError(self.validation_errors)
 
         print(f"File {self.file} is validated successfully. Initiating submission")
         print(f"File {self.file} being uploaded to storage")

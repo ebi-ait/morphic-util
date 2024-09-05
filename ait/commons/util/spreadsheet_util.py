@@ -649,8 +649,8 @@ class SpreadsheetSubmitter:
         # Check if the required column exists
         if 'cell_line.biomaterial_core.biomaterial_id' not in df.columns:
             errors.append(
-                "The column 'cell_line.biomaterial_core.biomaterial_id' does not exist in the Cell line sheet. "
-                "The rest of the file will not be processed")
+                f"The column 'cell_line.biomaterial_core.biomaterial_id' does not exist in the {sheet_name} sheet. "
+                f"The rest of the file will not be processed")
             return [], df
 
         # Filter rows where biomaterial_id is not null
@@ -740,7 +740,7 @@ class SpreadsheetSubmitter:
         # Check if the required column exists
         if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
             errors.append(f"The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not "
-                          f"exist in {sheet_name}.")
+                          f"exist in {sheet_name} name. The rest of the file will not be processed")
             return [], df
 
         # Filter rows where biomaterial_id is not null
@@ -821,7 +821,7 @@ class SpreadsheetSubmitter:
         # Check if the required column exists
         if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
             errors.append(f"The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not "
-                          f"exist in {sheet_name}.")
+                          f"exist in {sheet_name}. The rest of the file will not be processed")
             return [], df
 
         # Filter rows where biomaterial_id is not null
@@ -906,7 +906,8 @@ class SpreadsheetSubmitter:
 
         for col in required_columns:
             if col not in df.columns:
-                errors.append(f"The column '{col}' does not exist in the Library Preparation sheet.")
+                errors.append(f"The column '{col}' does not exist in the {sheet_name} sheet. "
+                              f"The rest of the file will not be processed")
 
                 return [], df
 
@@ -1001,7 +1002,8 @@ class SpreadsheetSubmitter:
 
         for col in required_columns:
             if col not in df.columns:
-                errors.append(f"The column '{col}' does not exist in the Sequencing File sheet.")
+                errors.append(f"The column '{col}' does not exist in the {sheet_name} sheet. "
+                              f"The rest of the file will not be processed")
 
                 return [], df
 
@@ -1104,7 +1106,6 @@ class SpreadsheetSubmitter:
 
         # Filter rows where 'expression_alteration_id' is not null
         df = df[df['expression_alteration_id'].notna()]
-
         # Replace invalid float values (e.g., NaN, infinite) with None
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 

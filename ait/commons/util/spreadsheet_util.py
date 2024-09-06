@@ -148,7 +148,7 @@ class ExpressionAlterationStrategy:
     def to_dict(self):
         return {
             "content": {
-                "label": self.expression_alteration_id,
+                "expression_alteration_label": self.expression_alteration_id,
                 "protocol_id": self.protocol_id,
                 "allele_specific": self.allele_specific,
                 "altered_gene_symbols": self.altered_gene_symbols,

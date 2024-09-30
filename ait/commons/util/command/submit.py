@@ -18,7 +18,7 @@ def matching_expression_alteration_and_cell_line(cell_line, expression_alteratio
         " ", "").strip()
 
 
-def get_id_from_url(url):
+def get_entity_id_from_hal_link(url):
     """
     Extracts and returns the ID from a given URL.
 
@@ -136,7 +136,7 @@ def post_to_provider_api_and_get_entity_id(url, data, access_token):
     response_data = response.json()
     entity_url = response_data['_links']['self']['href']
 
-    return get_id_from_url(entity_url)
+    return get_entity_id_from_hal_link(entity_url)
 
 
 def post_to_provider_api(url, data_type_in_hal_link, data, access_token):
@@ -169,9 +169,9 @@ class CmdSubmit:
     A class to handle submission of studies, datasets, and biomaterials to a server.
 
     Attributes:
-        base_url (str): The base URL for the server.
-        submission_envelope_create_url (str): URL for creating submission envelopes.
-        submission_envelope_base_url (str): Base URL for submission envelopes.
+        BASE_URL (str): The base URL for the server.
+        SUBMISSION_ENVELOPE_CREATE_URL (str): URL for creating submission envelopes.
+        SUBMISSION_ENVELOPE_BASE_URL (str): Base URL for submission envelopes.
         args (Namespace): Command-line arguments.
         access_token (str): Access token for authorization.
         type (str): Type of submission (study, dataset, or biomaterial).
@@ -191,9 +191,9 @@ class CmdSubmit:
         transform(file): Transforms the input file to a JSON object.
         put_to_provider_api(url, access_token): Sends a PUT request to the provider API.
     """
-    base_url = 'https://api.ingest.dev.archive.morphic.bio'
-    submission_envelope_create_url = f"{base_url}/submissionEnvelopes/updateSubmissions"
-    submission_envelope_base_url = f"{base_url}/submissionEnvelopes"
+    BASE_URL = 'http://localhost:8080'
+    SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
+    SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
     def __init__(self, args):
         """
@@ -206,7 +206,7 @@ class CmdSubmit:
         self.access_token = get_profile('morphic-util').access_token
         self.type = getattr(self.args, 'type', None)
         self.file = getattr(self.args, 'file', None)
-        self.provider_api = APIProvider(self.base_url)
+        self.provider_api = APIProvider(self.BASE_URL)
 
     def run(self):
         """
@@ -311,11 +311,11 @@ class CmdSubmit:
         for expression_alteration in expression_alterations:
             if cell_line.expression_alteration_id is not None:
                 if matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
-                    print(f"Linking cell line {cell_line_entity_id} "
+                    print(f"Linking cell line {cell_line.biomaterial_id} "
                           f"as derived by process of {expression_alteration.expression_alteration_id}")
 
                     self.perform_hal_linkage(
-                        f"{self.base_url}/biomaterials/{cell_line_entity_id}/derivedByProcesses",
+                        f"{self.BASE_URL}/biomaterials/{cell_line_entity_id}/derivedByProcesses",
                         expression_alteration.id, 'processes', access_token
                     )
 
@@ -447,8 +447,8 @@ class CmdSubmit:
 
     def link_cell_line_and_differentiated_cell_line(self,
                                                     access_token,
-                                                    cell_line_entity_id,
-                                                    differentiated_entity_id,
+                                                    cell_line,
+                                                    differentiated_or_undifferentiated_cell_line,
                                                     dataset_id,
                                                     submission_envelope_id,
                                                     action,
@@ -475,9 +475,13 @@ class CmdSubmit:
             The ID of the differentiation process entity created.
         """
         if action.lower() != 'modify':
+            cell_line_biomaterial_id = cell_line.biomaterial_id
+            differentiated_or_undifferentiated_cell_line_biomaterial_id = differentiated_or_undifferentiated_cell_line.biomaterial_id
+
             try:
+
                 print(
-                    f"Cell line {cell_line_entity_id} has differentiated cell lines, creating differentiation process "
+                    f"Cell line {cell_line_biomaterial_id} has differentiated cell lines, creating differentiation process "
                     f"to link them")
 
                 # Create a differentiation process entity
@@ -489,27 +493,31 @@ class CmdSubmit:
                 )
 
                 print(
-                    f"Linking Cell Line Biomaterial: {cell_line_entity_id} as input to process : {differentiation_process_entity_id}")
+                    f"Linking Cell Line Biomaterial: {cell_line_biomaterial_id} as input to process : {differentiation_process_entity_id}")
 
                 # Link the cell line entity as input to the differentiation process
                 self.perform_hal_linkage(
-                    f"{self.base_url}/biomaterials/{cell_line_entity_id}/inputToProcesses",
+                    f"{self.BASE_URL}/biomaterials/{cell_line.id}/inputToProcesses",
                     differentiation_process_entity_id, 'processes', access_token
                 )
 
-                print(f"Linking Differentiated cell line Biomaterial: {differentiated_entity_id} "
-                      f"as derived by process : {differentiation_process_entity_id}")
+                print(
+                    f"Linking Differentiated cell line Biomaterial: "
+                    f"{differentiated_or_undifferentiated_cell_line_biomaterial_id} "
+                    f"as derived by process : {differentiation_process_entity_id}")
 
                 # Link the differentiated cell line entity as derived by the differentiation process
                 self.perform_hal_linkage(
-                    f"{self.base_url}/biomaterials/{differentiated_entity_id}/derivedByProcesses",
+                    f"{self.BASE_URL}/biomaterials/{differentiated_or_undifferentiated_cell_line.id}"
+                    f"/derivedByProcesses",
                     differentiation_process_entity_id, 'processes', access_token
                 )
 
                 return differentiation_process_entity_id
             except Exception as e:
                 errors.append(
-                    f"Failed to update relations between Cell line {cell_line_entity_id} and Differentiated cell line {differentiated_entity_id}")
+                    f"Failed to update relations between Cell line {cell_line_biomaterial_id} "
+                    f"and Differentiated cell line {differentiated_or_undifferentiated_cell_line_biomaterial_id}")
                 raise SubmissionError(errors, e)
 
     def handle_library_preparation(self,
@@ -637,8 +645,8 @@ class CmdSubmit:
 
     def link_differentiated_and_library_preparation(self,
                                                     access_token,
-                                                    differentiated_entity_id,
-                                                    library_preparation_entity_id,
+                                                    differentiated_or_undifferentiated_cell_line,
+                                                    library_preparation,
                                                     dataset_id,
                                                     submission_envelope_id,
                                                     action,
@@ -665,8 +673,12 @@ class CmdSubmit:
             The ID of the library preparation process entity created.
         """
         if action.lower() != 'modify':
+            differentiated_or_undifferentiated_cell_line_biomaterial_id = differentiated_or_undifferentiated_cell_line.biomaterial_id
+            library_preparation_biomaterial_id = library_preparation.biomaterial_id
+
             try:
-                print(f"Differentiated cell line {differentiated_entity_id} has library preparations, creating library "
+                print(f"Differentiated cell line {differentiated_or_undifferentiated_cell_line_biomaterial_id} "
+                      f"has library preparations, creating library "
                       f"preparation process to link them")
 
                 # Create a library preparation process entity
@@ -678,22 +690,22 @@ class CmdSubmit:
                 )
 
                 print(
-                    f"Linking Differentiated Cell Line Biomaterial: {differentiated_entity_id} as input to library "
-                    f"preparation process")
+                    f"Linking Differentiated Cell Line Biomaterial: {differentiated_or_undifferentiated_cell_line_biomaterial_id} "
+                    f"as input to library preparation process")
 
                 # Link the differentiated cell line entity as input to the library preparation process
                 self.perform_hal_linkage(
-                    f"{self.base_url}/biomaterials/{differentiated_entity_id}/inputToProcesses",
+                    f"{self.BASE_URL}/biomaterials/{differentiated_or_undifferentiated_cell_line.id}/inputToProcesses",
                     library_preparation_process_entity_id, 'processes', access_token
                 )
 
                 print(
-                    f"Linking Library Preparation Biomaterial: {library_preparation_entity_id} as derived by library "
-                    f"preparation process")
+                    f"Linking Library Preparation Biomaterial: {library_preparation_biomaterial_id} "
+                    f"as derived by library preparation process")
 
                 # Link the library preparation entity as derived by the library preparation process
                 self.perform_hal_linkage(
-                    f"{self.base_url}/biomaterials/{library_preparation_entity_id}/derivedByProcesses",
+                    f"{self.BASE_URL}/biomaterials/{library_preparation.id}/derivedByProcesses",
                     library_preparation_process_entity_id, 'processes', access_token
                 )
 
@@ -701,8 +713,8 @@ class CmdSubmit:
             except Exception as e:
                 errors.append(
                     f"Failed to update relations between Differentiated Cell line "
-                    f"{differentiated_entity_id} and Library preparation"
-                    f" {library_preparation_entity_id}")
+                    f"{differentiated_or_undifferentiated_cell_line_biomaterial_id} and Library preparation"
+                    f" {library_preparation_biomaterial_id}")
                 raise SubmissionError(errors, e)
 
     def handle_sequencing_file(self, library_preparation_entity_id, sequencing_file,
@@ -799,8 +811,8 @@ class CmdSubmit:
 
     def link_library_preparation_and_sequencing_file(self,
                                                      access_token,
-                                                     library_preparation_entity_id,
-                                                     sequencing_file_entity_id,
+                                                     library_preparation,
+                                                     sequencing_file,
                                                      dataset_id,
                                                      submission_envelope_id,
                                                      action,
@@ -827,9 +839,12 @@ class CmdSubmit:
             The ID of the sequencing process entity created.
         """
         if action.lower() != 'modify':
+            library_preparation_biomaterial_id = library_preparation.biomaterial_id
+            sequence_file_name = sequencing_file.file_name
+
             try:
-                print(f"Library preparation {library_preparation_entity_id} has generated sequencing files."
-                      f"Creating sequencing process to link the sequencing file")
+                print(f"Library preparation {library_preparation_biomaterial_id} has "
+                      f"generated sequencing files. Creating sequencing process to link the sequencing file")
 
                 # Create a sequencing process entity
                 sequencing_process_entity_id = self.create_process(access_token,
@@ -838,20 +853,22 @@ class CmdSubmit:
                                                                    submission_envelope_id)
 
                 print(
-                    f"Linking Library preparation Biomaterial: {library_preparation_entity_id} as input to process: {sequencing_process_entity_id}")
+                    f"Linking Library preparation Biomaterial: {library_preparation_biomaterial_id} "
+                    f"as input to process: {sequencing_process_entity_id}")
 
                 # Link the library preparation entity as input to the sequencing process
                 self.perform_hal_linkage(
-                    f"{self.base_url}/biomaterials/{library_preparation_entity_id}/inputToProcesses",
+                    f"{self.BASE_URL}/biomaterials/{library_preparation.id}/inputToProcesses",
                     sequencing_process_entity_id, 'processes', access_token
                 )
 
                 print(
-                    f"Linking Sequencing file: {sequencing_file_entity_id} as derived by process: {sequencing_process_entity_id}")
+                    f"Linking Sequencing file: {sequence_file_name} as derived by process: "
+                    f"{sequencing_process_entity_id}")
 
                 # Link the sequencing file entity as derived by the sequencing process
                 self.perform_hal_linkage(
-                    f"{self.base_url}/files/{sequencing_file_entity_id}/derivedByProcesses",
+                    f"{self.BASE_URL}/files/{sequencing_file.id}/derivedByProcesses",
                     sequencing_process_entity_id, 'processes', access_token
                 )
 
@@ -859,8 +876,8 @@ class CmdSubmit:
             except Exception as e:
                 errors.append(
                     f"Failed to update relations between Library Preparation "
-                    f"{library_preparation_entity_id} and Sequencing file"
-                    f" {sequencing_file_entity_id}")
+                    f"{library_preparation_biomaterial_id} and Sequencing file"
+                    f" {sequence_file_name}")
                 raise SubmissionError(errors, e)
 
     def create_process(self, access_token, dataset_id, process_data, submission_envelope_id):
@@ -881,8 +898,8 @@ class CmdSubmit:
     def establish_links(self,
                         cell_lines,
                         cell_lines_df,
-                        differentiated_cell_lines,
-                        differentiated_cell_lines_df,
+                        differentiated_or_undifferentiated_cell_lines,
+                        differentiated_or_undifferentiated_cell_lines_df,
                         library_preparations,
                         library_preparations_df,
                         sequencing_files,
@@ -911,22 +928,22 @@ class CmdSubmit:
         """
         try:
             for cell_line in cell_lines:
-                for differentiated_cell_line in differentiated_cell_lines:
-                    if cell_line.biomaterial_id == differentiated_cell_line.input_biomaterial_id:
+                for differentiated_or_undifferentiated_cell_line in differentiated_or_undifferentiated_cell_lines:
+                    if cell_line.biomaterial_id == differentiated_or_undifferentiated_cell_line.input_biomaterial_id:
                         self.link_cell_line_and_differentiated_cell_line(access_token,
-                                                                         cell_line.id,
-                                                                         differentiated_cell_line.id,
+                                                                         cell_line,
+                                                                         differentiated_or_undifferentiated_cell_line,
                                                                          dataset_id,
                                                                          submission_envelope_id,
                                                                          action,
                                                                          errors)
-            for differentiated_cell_line in differentiated_cell_lines:
+            for differentiated_or_undifferentiated_cell_line in differentiated_or_undifferentiated_cell_lines:
                 for library_preparation in library_preparations:
-                    if differentiated_cell_line.biomaterial_id == library_preparation.differentiated_biomaterial_id:
+                    if differentiated_or_undifferentiated_cell_line.biomaterial_id == library_preparation.differentiated_biomaterial_id:
                         self.link_differentiated_and_library_preparation(
                             access_token,
-                            differentiated_cell_line.id,
-                            library_preparation.id,
+                            differentiated_or_undifferentiated_cell_line,
+                            library_preparation,
                             dataset_id,
                             submission_envelope_id,
                             action,
@@ -936,8 +953,8 @@ class CmdSubmit:
                 for sequencing_file in sequencing_files:
                     if library_preparation.biomaterial_id == sequencing_file.library_preparation_id:
                         self.link_library_preparation_and_sequencing_file(access_token,
-                                                                          library_preparation.id,
-                                                                          sequencing_file.id,
+                                                                          library_preparation,
+                                                                          sequencing_file,
                                                                           dataset_id,
                                                                           submission_envelope_id,
                                                                           action,
@@ -955,7 +972,7 @@ class CmdSubmit:
             # sequencing_files_df = None
 
         return ([cell_lines_df,
-                 differentiated_cell_lines_df,
+                 differentiated_or_undifferentiated_cell_lines_df,
                  library_preparations_df,
                  sequencing_files_df], message)
 
@@ -1027,15 +1044,16 @@ class CmdSubmit:
             'biomaterial': 'biomaterials',
             'process': 'processes'
         }
+
         hal_entity = entity_map.get(input_entity_type)
 
         if not hal_entity:
             return None
 
-        entity_create_url = post_to_provider_api(self.submission_envelope_create_url, hal_entity, data,
+        entity_create_url = post_to_provider_api(self.SUBMISSION_ENVELOPE_CREATE_URL, hal_entity, data,
                                                  access_token)
         entity_self_hal_link = post_to_provider_api(entity_create_url, 'self', data, access_token)
-        entity_id = get_id_from_url(entity_self_hal_link)
+        entity_id = get_entity_id_from_hal_link(entity_self_hal_link)
 
         print(f"{input_entity_type.capitalize()} created successfully: {entity_id}")
 
@@ -1054,7 +1072,7 @@ class CmdSubmit:
         if not hal_entity:
             return False
 
-        entity_patch_url = f"{self.base_url}/{hal_entity}/{id}"
+        entity_patch_url = f"{self.BASE_URL}/{hal_entity}/{id}"
         return self.patch_to_provider_api(entity_patch_url, data, access_token)
 
     def link_to_dataset(self, input_entity_type, dataset_id, entity_id, access_token):
@@ -1068,7 +1086,7 @@ class CmdSubmit:
         if not hal_entity:
             return False
 
-        put_url = f"{self.base_url}/datasets/{dataset_id}/{hal_entity}/{entity_id}"
+        put_url = f"{self.BASE_URL}/datasets/{dataset_id}/{hal_entity}/{entity_id}"
         return self.provider_api.put(put_url, access_token)
 
     def patch_to_provider_api(self, entity_patch_url, data, access_token):
@@ -1105,9 +1123,9 @@ class CmdSubmit:
         if not hal_entity:
             return None
 
-        entity_create_url = f"{self.submission_envelope_base_url}/{submission_envelope_id}/{hal_entity}"
+        entity_create_url = f"{self.SUBMISSION_ENVELOPE_BASE_URL}/{submission_envelope_id}/{hal_entity}"
         entity_self_hal_link = post_to_provider_api(entity_create_url, 'self', data, access_token)
-        entity_id = get_id_from_url(entity_self_hal_link)
+        entity_id = get_entity_id_from_hal_link(entity_self_hal_link)
 
         print(f"{input_entity_type.capitalize()} created successfully: {entity_id}")
 
@@ -1124,7 +1142,7 @@ class CmdSubmit:
         """
         print(f"Linking dataset {dataset_id} to study {study_id}")
 
-        url = f"{self.base_url}/studies/{study_id}/datasets/{dataset_id}"
+        url = f"{self.BASE_URL}/studies/{study_id}/datasets/{dataset_id}"
         self.provider_api.put(url, access_token)
 
         print(f"Dataset linked successfully to study: {study_id}")
@@ -1140,7 +1158,7 @@ class CmdSubmit:
         """
         print(f"Linking biomaterial {biomaterial_id} to dataset {dataset_id}")
 
-        url = f"{self.base_url}/datasets/{dataset_id}/biomaterials/{biomaterial_id}"
+        url = f"{self.BASE_URL}/datasets/{dataset_id}/biomaterials/{biomaterial_id}"
         self.provider_api.put(url, access_token)
 
         print(f"Biomaterial linked successfully to dataset: {dataset_id}")
@@ -1156,7 +1174,7 @@ class CmdSubmit:
         """
         print(f"Linking biomaterial {biomaterial_id} to process {process_id}")
 
-        url = f"{self.base_url}/biomaterials/{biomaterial_id}/inputToProcesses"
+        url = f"{self.BASE_URL}/biomaterials/{biomaterial_id}/inputToProcesses"
         self.perform_hal_linkage(url, process_id, 'processes', access_token)
 
     def delete_submission(self, submission_envelope_id, access_token, force_delete=False):
@@ -1171,7 +1189,7 @@ class CmdSubmit:
         Returns:
             bool: True if the deletion was successful, False otherwise.
         """
-        url = f"{self.submission_envelope_base_url}/{submission_envelope_id}"
+        url = f"{self.SUBMISSION_ENVELOPE_BASE_URL}/{submission_envelope_id}"
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {access_token}'
@@ -1201,7 +1219,7 @@ class CmdSubmit:
             'Authorization': f'Bearer {access_token}'
         }
 
-        response = requests.post(url, headers=headers, data=f"{self.base_url}/{link_to}/{input_id}")
+        response = requests.post(url, headers=headers, data=f"{self.BASE_URL}/{link_to}/{input_id}")
 
         if response.status_code != 200:
             raise Exception(f"Failed to link biomaterial to process {input_id}. "
@@ -1210,7 +1228,7 @@ class CmdSubmit:
             print("Linkage successful")
 
     def create_child_biomaterial(self, cell_line_entity_id, body, access_token):
-        url = f"{self.base_url}/biomaterials/{cell_line_entity_id}/childBiomaterials"
+        url = f"{self.BASE_URL}/biomaterials/{cell_line_entity_id}/childBiomaterials"
 
         entity_id = post_to_provider_api_and_get_entity_id(url, body, access_token)
         return entity_id
@@ -1226,10 +1244,10 @@ class CmdSubmit:
             access_token (str): Access token for authorization.
         """
         if type == 'biomaterial':
-            url = f"{self.submission_envelope_base_url}/{submission_envelope_id}/biomaterials/{entity_id}"
+            url = f"{self.SUBMISSION_ENVELOPE_BASE_URL}/{submission_envelope_id}/biomaterials/{entity_id}"
             self.provider_api.put(url, access_token)
         elif type == 'file':
-            url = f"{self.submission_envelope_base_url}/{submission_envelope_id}/files/{entity_id}"
+            url = f"{self.SUBMISSION_ENVELOPE_BASE_URL}/{submission_envelope_id}/files/{entity_id}"
             self.provider_api.put(url, access_token)
 
     def delete_dataset(self, dataset, access_token):
@@ -1240,7 +1258,7 @@ class CmdSubmit:
             dataset (str): The ID of the dataset to delete.
             access_token (str): Access token for authorization.
         """
-        fetched_dataset = self.provider_api.get(f"{self.base_url}/datasets/{dataset}", access_token)
+        fetched_dataset = self.provider_api.get(f"{self.BASE_URL}/datasets/{dataset}", access_token)
         print(f"Dataset fetched successfully: {dataset}")
         print(f"Initiating delete of {dataset}")
 
@@ -1251,17 +1269,17 @@ class CmdSubmit:
         print("Deleting Biomaterials:")
         for biomaterial in biomaterials:
             print(f"Deleting {biomaterial}")
-            self.provider_api.delete(f"{self.base_url}/biomaterials/{biomaterial}", access_token)
+            self.provider_api.delete(f"{self.BASE_URL}/biomaterials/{biomaterial}", access_token)
 
         print("\nDeleting Processes:")
         for process in processes:
             print(f"Deleting {process}")
-            self.provider_api.delete(f"{self.base_url}/processes/{process}", access_token)
+            self.provider_api.delete(f"{self.BASE_URL}/processes/{process}", access_token)
 
         print("\nDeleting Data Files:")
         for data_file in data_files:
             print(f"Deleting {data_file}")
-            self.provider_api.delete(f"{self.base_url}/files/{data_file}", access_token)
+            self.provider_api.delete(f"{self.BASE_URL}/files/{data_file}", access_token)
 
         print(f"\nDeleting the dataset: {dataset}")
-        self.provider_api.delete(f"{self.base_url}/datasets/{dataset}", access_token)
+        self.provider_api.delete(f"{self.BASE_URL}/datasets/{dataset}", access_token)

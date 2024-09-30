@@ -1,7 +1,6 @@
 import json
 
 import boto3
-import botocore
 
 from ait.commons.util.aws_cognito_authenticator import AwsCognitoAuthenticator
 from ait.commons.util.settings import AWS_SECRET_NAME_AK_BUCKET, AWS_SECRET_NAME_SK_BUCKET, \

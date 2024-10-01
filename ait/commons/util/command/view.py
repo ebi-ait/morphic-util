@@ -18,8 +18,8 @@ class CmdView:
             print("Dataset is mandatory for view")
 
     def run(self):
-        fetched_dataset = self.provider_api.get_to_provider_api(f"{self.base_url}/datasets/{self.dataset}",
-                                                                self.access_token)
+        fetched_dataset = self.provider_api.get(f"{self.base_url}/datasets/{self.dataset}",
+                                                self.access_token)
         print(f"Dataset fetched successfully: {self.dataset}")
         print("Getting Biomaterials")
         biomaterials = fetched_dataset.get('biomaterials', [])
@@ -27,8 +27,8 @@ class CmdView:
         for biomaterial in biomaterials:
             print(biomaterial)
 
-            fetched_biomaterial = self.provider_api.get_to_provider_api(f"{self.base_url}/biomaterials/{biomaterial}",
-                                                                        self.access_token)
+            fetched_biomaterial = self.provider_api.get(f"{self.base_url}/biomaterials/{biomaterial}",
+                                                        self.access_token)
             print(fetched_biomaterial)
 
         print("Getting Processes")
@@ -37,8 +37,8 @@ class CmdView:
         for process in processes:
             print(process)
 
-            fetched_process = self.provider_api.get_to_provider_api(f"{self.base_url}/processes/{process}",
-                                                                    self.access_token)
+            fetched_process = self.provider_api.get(f"{self.base_url}/processes/{process}",
+                                                    self.access_token)
             print(fetched_process)
 
         print("Getting Data Files")
@@ -47,8 +47,8 @@ class CmdView:
         for file in files:
             print(files)
 
-            fetched_file = self.provider_api.get_to_provider_api(f"{self.base_url}/files/{file}",
-                                                                 self.access_token)
+            fetched_file = self.provider_api.get(f"{self.base_url}/files/{file}",
+                                                 self.access_token)
             print(fetched_file)
 
         return True, "FETCHED SUCCESSFULLY"

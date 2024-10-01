@@ -1,3 +1,5 @@
+import traceback
+
 import pandas as pd
 import json
 import numpy as np
@@ -20,10 +22,35 @@ class MissingParentEntityError:
 class ValidationError(Exception):
     def __init__(self, errors):
         self.errors = errors
-        super().__init__("Validation errors occurred")
+        super().__init__(self._format_message())
 
-    def __str__(self):
-        return "\n".join(self.errors)
+    def _format_message(self):
+        # This method formats the error message that will be displayed when the exception is raised.
+        return "Validation errors occurred:\n" + "\n".join(self.errors)
+
+
+class SubmissionError(Exception):
+    """
+    Exception raised for errors during submission.
+    Includes a list of errors and an optional underlying exception.
+    """
+
+    def __init__(self, errors, original_exception=None):
+        self.errors = errors
+        self.original_exception = original_exception  # Store the original exception
+        super().__init__(self._format_message())
+
+    def _format_message(self):
+        """
+        Format the error message to include both the list of submission errors and details of the original exception.
+        """
+        message = "Submission errors occurred:\n" + "\n".join(self.errors)
+        if self.original_exception:
+            message += "\n\nOriginal Exception Details:\n"
+            message += f"Type: {type(self.original_exception).__name__}\n"
+            message += f"Message: {str(self.original_exception)}\n"
+            message += "Stack Trace:\n" + "".join(traceback.format_tb(self.original_exception.__traceback__))
+        return message
 
 
 """
@@ -37,8 +64,16 @@ class OrphanedEntityError(Exception):
 
 
 class CellLine:
-    def __init__(self, biomaterial_id, description, derived_from_accession,
-                 clone_id, protocol_id, zygosity, cell_type, expression_alteration_id, id):
+    def __init__(self,
+                 biomaterial_id,
+                 description,
+                 derived_from_accession,
+                 clone_id,
+                 protocol_id,
+                 zygosity,
+                 cell_type,
+                 expression_alteration_id,
+                 id):
         self.biomaterial_id = biomaterial_id
         self.description = description
         self.derived_from_accession = derived_from_accession
@@ -81,9 +116,19 @@ class CellLine:
 
 
 class ExpressionAlterationStrategy:
-    def __init__(self, expression_alteration_id, protocol_id, allele_specific, altered_gene_symbols, altered_gene_ids,
-                 targeted_genomic_region, expected_alteration_type, sgrna_target,
-                 protocol_method_text, altered_locus, guide_sequence, id):
+    def __init__(self,
+                 expression_alteration_id,
+                 protocol_id,
+                 allele_specific,
+                 altered_gene_symbols,
+                 altered_gene_ids,
+                 targeted_genomic_region,
+                 expected_alteration_type,
+                 sgrna_target,
+                 protocol_method_text,
+                 altered_locus,
+                 guide_sequence,
+                 id):
         self.expression_alteration_id = expression_alteration_id
         self.protocol_id = protocol_id
         self.allele_specific = allele_specific
@@ -103,7 +148,7 @@ class ExpressionAlterationStrategy:
     def to_dict(self):
         return {
             "content": {
-                "label": self.expression_alteration_id,
+                "expression_alteration_label": self.expression_alteration_id,
                 "protocol_id": self.protocol_id,
                 "allele_specific": self.allele_specific,
                 "altered_gene_symbols": self.altered_gene_symbols,
@@ -120,8 +165,16 @@ class ExpressionAlterationStrategy:
 
 
 class DifferentiatedCellLine:
-    def __init__(self, biomaterial_id, description, input_biomaterial_id, protocol_id, timepoint_value, timepoint_unit,
-                 terminally_differentiated, model_system, id):
+    def __init__(self,
+                 biomaterial_id,
+                 description,
+                 input_biomaterial_id,
+                 protocol_id,
+                 timepoint_value,
+                 timepoint_unit,
+                 terminally_differentiated,
+                 model_system,
+                 id):
         self.biomaterial_id = biomaterial_id
         self.description = description
         self.input_biomaterial_id = input_biomaterial_id
@@ -162,10 +215,21 @@ class DifferentiatedCellLine:
 
 
 class LibraryPreparation:
-    def __init__(self, biomaterial_id, protocol_id, dissociation_protocol_id, differentiated_biomaterial_id,
-                 average_fragment_size, input_amount_value, input_amount_unit,
-                 final_yield_value, final_yield_unit, concentration_value, concentration_unit,
-                 pcr_cycles, pcr_cycles_for_sample_index, id):
+    def __init__(self,
+                 biomaterial_id,
+                 protocol_id,
+                 dissociation_protocol_id,
+                 differentiated_biomaterial_id,
+                 average_fragment_size,
+                 input_amount_value,
+                 input_amount_unit,
+                 final_yield_value,
+                 final_yield_unit,
+                 concentration_value,
+                 concentration_unit,
+                 pcr_cycles,
+                 pcr_cycles_for_sample_index,
+                 id):
         self.biomaterial_id = biomaterial_id
         self.protocol_id = protocol_id
         self.dissociation_protocol_id = dissociation_protocol_id
@@ -226,8 +290,17 @@ class EntityType:
 
 
 class SequencingFile:
-    def __init__(self, file_name, extension, read_index, lane_index=None, read_length=None, checksum=None,
-                 library_preparation_id=None, sequencing_protocol_id=None, run_id=None, id=None):
+    def __init__(self,
+                 file_name,
+                 extension,
+                 read_index,
+                 lane_index=None,
+                 read_length=None,
+                 checksum=None,
+                 library_preparation_id=None,
+                 sequencing_protocol_id=None,
+                 run_id=None,
+                 id=None):
         self.file_name = file_name
         self.extension = extension
         self.read_index = read_index
@@ -272,8 +345,13 @@ class SequencingFile:
         }
 
 
-def find_orphans(source_entities, target_entities,
-                 source_attr, target_attr, source_type, target_type, errors):
+def find_orphans(source_entities,
+                 target_entities,
+                 source_attr,
+                 target_attr,
+                 source_type,
+                 target_type,
+                 errors):
     """
     Validates that each source entity has a corresponding target entity.
 
@@ -303,7 +381,9 @@ def find_orphans(source_entities, target_entities,
     # print(f"VALIDATED: All {source_type.lower()}s have corresponding {target_type.lower()}s.")
 
 
-def merge_library_preparation_sequencing_file(library_preparations, sequencing_files, errors):
+def merge_library_preparation_sequencing_file(library_preparations,
+                                              sequencing_files,
+                                              errors):
     """
     Merges library preparations and sequencing files based on their IDs.
 
@@ -349,7 +429,8 @@ def merge_library_preparation_sequencing_file(library_preparations, sequencing_f
                 library_preparation.add_sequencing_file(sequencing_file)
 
 
-def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines, library_preparations,
+def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
+                                                           library_preparations,
                                                            errors):
     """
     Merges differentiated cell lines and library preparations based on their biomaterial IDs.
@@ -399,7 +480,8 @@ def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_l
 
 
 def merge_cell_line_and_differentiated_cell_line(cell_lines,
-                                                 differentiated_cell_lines, errors):
+                                                 differentiated_cell_lines,
+                                                 errors):
     """
     Merges cell lines and differentiated cell lines based on their biomaterial IDs.
 
@@ -537,11 +619,14 @@ class SpreadsheetSubmitter:
             df = pd.read_excel(self.file_path, sheet_name=sheet_names[trimmed_sheet_name], engine='openpyxl',
                                skiprows=skip_rows)
         else:
-            raise ValueError(f"Sheet '{sheet_name}' not found in the spreadsheet.")
+            raise ValidationError(f"Sheet '{sheet_name}' not found in the spreadsheet.")
 
         return df
 
-    def parse_cell_lines(self, sheet_name, action, errors):
+    def parse_cell_lines(self,
+                         sheet_name,
+                         action,
+                         errors):
         """
         Parses data related to cell lines from a specified sheet in the Excel file.
 
@@ -564,8 +649,8 @@ class SpreadsheetSubmitter:
         # Check if the required column exists
         if 'cell_line.biomaterial_core.biomaterial_id' not in df.columns:
             errors.append(
-                "The column 'cell_line.biomaterial_core.biomaterial_id' does not exist in the Cell line sheet. "
-                "The rest of the file will not be processed")
+                f"The column 'cell_line.biomaterial_core.biomaterial_id' does not exist in the {sheet_name} sheet. "
+                f"The rest of the file will not be processed")
             return [], df
 
         # Filter rows where biomaterial_id is not null
@@ -627,7 +712,10 @@ class SpreadsheetSubmitter:
 
         return cell_lines, df_filtered, parent_cell_line_names[0]
 
-    def parse_differentiated_cell_lines(self, sheet_name, action, errors):
+    def parse_differentiated_cell_lines(self,
+                                        sheet_name,
+                                        action,
+                                        errors):
         """
         Parses data related to differentiated cell lines from a specified sheet in the Excel file.
 
@@ -651,8 +739,8 @@ class SpreadsheetSubmitter:
 
         # Check if the required column exists
         if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
-            errors.append("The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not "
-                          "exist.")
+            errors.append(f"The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not "
+                          f"exist in {sheet_name} name. The rest of the file will not be processed")
             return [], df
 
         # Filter rows where biomaterial_id is not null
@@ -705,7 +793,91 @@ class SpreadsheetSubmitter:
 
         return differentiated_cell_lines, df_filtered
 
-    def parse_library_preparations(self, sheet_name, action, errors):
+    def parse_undifferentiated_cell_lines(self,
+                                          sheet_name,
+                                          action,
+                                          errors):
+        """
+        Parses data related to differentiated cell lines from a specified sheet in the Excel file.
+
+        Parameters:
+        -----------
+        sheet_name : str
+            The name of the sheet containing differentiated cell line data.
+        column_mapping : dict
+            A dictionary mapping column names in the sheet to expected attribute names.
+
+        Returns:
+        --------
+        list
+            A list of DifferentiatedCellLine objects parsed from the specified sheet.
+        """
+        df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
+        df.columns = df.columns.str.strip()
+        # df = df.rename(columns=column_mapping)
+        # Remove unnamed columns (columns without headers)
+        # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
+
+        # Check if the required column exists
+        if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
+            errors.append(f"The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not "
+                          f"exist in {sheet_name}. The rest of the file will not be processed")
+            return [], df
+
+        # Filter rows where biomaterial_id is not null
+        df = df[df['differentiated_cell_line.biomaterial_core.biomaterial_id'].notna()]
+        df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
+        # Define columns to check for values starting with 'ABC' or 'XYZ'
+        cols_to_check = ['differentiated_cell_line.biomaterial_core.biomaterial_id']
+        # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
+        mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
+            ('FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
+             'differentiated_cell_line.biomaterial_core.biomaterial_id'))).all(axis=1)
+        # Apply the mask to filter out rows
+        df_filtered = df[mask]
+        # Check for mandatory fields and create Differentiated CellLine objects
+        undifferentiated_cell_lines = []
+
+        for _, row in df_filtered.iterrows():
+            differentiated_biomaterial_id = row['differentiated_cell_line.biomaterial_core.biomaterial_id']
+            biomaterial_id = row.get('cell_line.biomaterial_core.biomaterial_id')
+
+            # Check if biomaterial_id is null
+            if pd.isnull(differentiated_biomaterial_id):
+                errors.append("Differentiated Cell line ID cannot be null in any row of the Differentiated Cell line "
+                              "sheet.")
+                # raise MissingMandatoryFieldError("Differentiated Cell line ID cannot be null in any row.")
+
+            # Check if derived_accession and cell_type are present
+            if pd.isnull(biomaterial_id):
+                errors.append(f"Input Cell line ID cannot be null for Differentiated Cell line:  "
+                              f"{differentiated_biomaterial_id}")
+                """
+                raise MissingMandatoryFieldError(
+                    "Input Cell line ID cannot be null. " + differentiated_biomaterial_id)
+                """
+
+            # Create DifferentiatedCellLine objects from filtered DataFrame rows
+            undifferentiated_cell_lines.append(
+                DifferentiatedCellLine(
+                    biomaterial_id=differentiated_biomaterial_id,
+                    description=row.get('differentiated_cell_line.biomaterial_core.biomaterial_description'),
+                    input_biomaterial_id=biomaterial_id,
+                    protocol_id=row.get('differentiation_protocol.protocol_core.protocol_id'),
+                    timepoint_value=row.get('differentiated_cell_line.timepoint_value'),
+                    timepoint_unit=row.get('differentiated_cell_line.timepoint_unit.text'),
+                    terminally_differentiated=row.get('differentiated_cell_line.terminally_differentiated'),
+                    model_system=row.get('differentiated_cell_line.model_organ.text'),
+                    id=row.get('Id')
+                )
+            )
+
+        return undifferentiated_cell_lines, df_filtered
+
+    def parse_library_preparations(self,
+                                   sheet_name,
+                                   action,
+                                   errors):
         """
         Parses data related to library preparations from a specified sheet in the Excel file.
 
@@ -734,7 +906,8 @@ class SpreadsheetSubmitter:
 
         for col in required_columns:
             if col not in df.columns:
-                errors.append(f"The column '{col}' does not exist in the Library Preparation sheet.")
+                errors.append(f"The column '{col}' does not exist in the {sheet_name} sheet. "
+                              f"The rest of the file will not be processed")
 
                 return [], df
 
@@ -795,7 +968,10 @@ class SpreadsheetSubmitter:
 
         return library_preparations, df_filtered
 
-    def parse_sequencing_files(self, sheet_name, action, errors):
+    def parse_sequencing_files(self,
+                               sheet_name,
+                               action,
+                               errors):
         """
         Parses data related to sequencing files from a specified sheet in the Excel file.
 
@@ -826,7 +1002,8 @@ class SpreadsheetSubmitter:
 
         for col in required_columns:
             if col not in df.columns:
-                errors.append(f"The column '{col}' does not exist in the Sequencing File sheet.")
+                errors.append(f"The column '{col}' does not exist in the {sheet_name} sheet. "
+                              f"The rest of the file will not be processed")
 
                 return [], df
 
@@ -884,7 +1061,10 @@ class SpreadsheetSubmitter:
 
         return sequencing_files, df_filtered
 
-    def parse_expression_alteration(self, sheet_name, action, errors):
+    def parse_expression_alteration(self,
+                                    sheet_name,
+                                    action,
+                                    errors):
         """
         Parses data related to expression alterations from a specified sheet in the Excel file.
 
@@ -892,14 +1072,29 @@ class SpreadsheetSubmitter:
         -----------
         sheet_name : str
             The name of the sheet containing expression alterations data.
+        action : str
+            The action to be performed on the data.
+        errors : list
+            A list to accumulate error messages.
 
         Returns:
         --------
-        list
-            A list of ExpressionAlterationStrategy objects parsed from the specified sheet.
+        tuple
+            A tuple containing:
+            - A list of ExpressionAlterationStrategy objects parsed from the specified sheet (if valid)
+            - The filtered DataFrame of the parsed data
+            - A boolean indicating whether the expression alteration strategy sheet exists and is valid
         """
-        df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
+        # Attempt to parse the input file into a DataFrame
+        try:
+            df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
+        except Exception as e:
+            errors.append(f"Missing sheet '{sheet_name}': {e}")
+            return [], None
+
+        # Strip whitespace from column names
         df.columns = df.columns.str.strip()
+
         # Check if the required column exists
         required_columns = ['expression_alteration_id']
         missing_columns = [col for col in required_columns if col not in df.columns]
@@ -907,23 +1102,25 @@ class SpreadsheetSubmitter:
         if missing_columns:
             errors.append(
                 f"The following required columns are missing in the Expression Alteration Strategy sheet: {', '.join(missing_columns)}")
-            return [], df  # Return early if required columns are missing
+            return None, df, False  # Return if required columns are missing
 
         # Filter rows where 'expression_alteration_id' is not null
         df = df[df['expression_alteration_id'].notna()]
         # Replace invalid float values (e.g., NaN, infinite) with None
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-        # Define unwanted patterns
+
+        # Define unwanted patterns to filter out unwanted rows
         unwanted_patterns = (
             'FILL OUT INFORMATION BELOW THIS ROW',
             'A unique ID for the gene expression alteration instance..',
             'ID should have no spaces. For example: JAXPE0001_MEIS1, MSKKI119_MEF2C, NWU_AID'
         )
+
         # Create a mask to filter out rows with unwanted starting values
         mask = df['expression_alteration_id'].astype(str).str.startswith(unwanted_patterns)
         df_filtered = df[~mask]
 
-        # Create ExpressionAlterationStrategy objects
+        # Initialize the list of ExpressionAlterationStrategy objects
         expression_alterations = []
 
         for _, row in df_filtered.iterrows():
@@ -944,9 +1141,13 @@ class SpreadsheetSubmitter:
                 )
             )
 
+        # Return the list of objects, the filtered DataFrame, and a flag indicating success
         return expression_alterations, df_filtered
 
-    def get_cell_lines(self, sheet_name, action, errors):
+    def get_cell_lines(self,
+                       sheet_name,
+                       action,
+                       errors):
         """
         Retrieves parsed cell lines data from a specified sheet in the Excel file.
 
@@ -965,7 +1166,10 @@ class SpreadsheetSubmitter:
         cell_lines, cell_lines_df, parent_cell_line_name = self.parse_cell_lines(sheet_name, action, errors)
         return cell_lines, cell_lines_df, parent_cell_line_name
 
-    def get_differentiated_cell_lines(self, sheet_name, action, errors):
+    def get_differentiated_cell_lines(self,
+                                      sheet_name,
+                                      action,
+                                      errors):
         """
         Retrieves parsed differentiated cell lines data from a specified sheet in the Excel file.
 
@@ -981,12 +1185,38 @@ class SpreadsheetSubmitter:
         list
             A list of DifferentiatedCellLine objects parsed from the specified sheet.
         """
-        differentiated_cell_lines, differentiated_cell_lines_df = (self.
-                                                                   parse_differentiated_cell_lines
-                                                                   (sheet_name, action, errors))
+        differentiated_cell_lines, differentiated_cell_lines_df = self.parse_differentiated_cell_lines(sheet_name,
+                                                                                                       action, errors)
         return differentiated_cell_lines, differentiated_cell_lines_df
 
-    def get_library_preparations(self, sheet_name, action, errors):
+    def get_undifferentiated_cell_lines(self,
+                                        sheet_name,
+                                        action,
+                                        errors):
+        """
+        Retrieves parsed differentiated cell lines data from a specified sheet in the Excel file.
+
+        Parameters:
+        -----------
+        sheet_name : str
+            The name of the sheet containing differentiated cell line data.
+        column_mapping : dict
+            A dictionary mapping column names in the sheet to expected attribute names.
+
+        Returns:
+        --------
+        list
+            A list of DifferentiatedCellLine objects parsed from the specified sheet.
+        """
+        undifferentiated_cell_lines, undifferentiated_cell_lines_df = self.parse_undifferentiated_cell_lines(sheet_name,
+                                                                                                             action,
+                                                                                                             errors)
+        return undifferentiated_cell_lines, undifferentiated_cell_lines_df
+
+    def get_library_preparations(self,
+                                 sheet_name,
+                                 action,
+                                 errors):
         """
         Retrieves parsed library preparations data from a specified sheet in the Excel file.
 
@@ -1006,7 +1236,10 @@ class SpreadsheetSubmitter:
                                                                             action, errors)
         return library_preparations, df_filtered
 
-    def get_sequencing_files(self, sheet_name, action, errors):
+    def get_sequencing_files(self,
+                             sheet_name,
+                             action,
+                             errors):
         """
         Retrieves parsed sequencing files data from a specified sheet in the Excel file.
 
@@ -1025,6 +1258,9 @@ class SpreadsheetSubmitter:
         sequencing_files, df_filtered = self.parse_sequencing_files(sheet_name, action, errors)
         return sequencing_files, df_filtered
 
-    def get_expression_alterations(self, sheet_name, action, errors):
+    def get_expression_alterations(self,
+                                   sheet_name,
+                                   action,
+                                   errors):
         expression_alterations, df_filtered = self.parse_expression_alteration(sheet_name, action, errors)
         return expression_alterations, df_filtered

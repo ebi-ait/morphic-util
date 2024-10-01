@@ -10,6 +10,10 @@ def print_area(k, area):
         p = area.get('perms') or ''
     print(p.ljust(3), end=' ')
 
+    if 'md5' in area:
+        p = area.get('md5') or ''
+    print(p.ljust(3), end=' ')
+
     if 'name' in area:
         n = area.get('name')
         print(f'{n}' if n else '', end=' ')
@@ -44,13 +48,12 @@ class CmdList:
 
     def list_bucket_contents(self, selected_area, prefix=''):
         result = self.s3_cli.list_objects_v2(Bucket=selected_area, Delimiter='/', Prefix=prefix)
-
         # Folders
         dirs = result.get('CommonPrefixes', [])
 
         for d in dirs:
             k = d.get('Prefix')
-            print_area(k, {'key': k, 'perms': 'dir'})
+            print_area(k, {'key': k, 'md5': None, 'perms': 'dir'})
             self.list_bucket_contents(selected_area, prefix=k)
 
         # Files
@@ -58,7 +61,10 @@ class CmdList:
 
         for f in files:
             k = f.get('Key')
-            print_area(k, {'key': k, 'perms': 'file'})
+            head_object_response = self.s3_cli.head_object(Bucket=selected_area, Key=k)
+            metadata = head_object_response.get('Metadata', {})
+            hash_md5 = metadata.get('md5', 'MD5 checksum not found')
+            print_area(k, {'key': k, 'md5': hash_md5, 'perms': 'file'})
 
     def list_bucket_contents_and_return(self, selected_area, prefix=''):
         """
@@ -71,26 +77,31 @@ class CmdList:
         Returns:
         - A list of file keys in the bucket.
         """
-        file_keys = []
+        file_keys = []  # Initialize an empty list to store file keys.
 
+        # Define the recursive function to list bucket contents.
         def _list_bucket_contents(bucket, prefix):
+            # Call AWS S3 API to list objects with a specific prefix.
             result = self.s3_cli.list_objects_v2(Bucket=bucket, Delimiter='/', Prefix=prefix)
 
-            # Folders
+            # Handle directories (folders) first.
             dirs = result.get('CommonPrefixes', [])
             for d in dirs:
                 k = d.get('Prefix')
-                # print_area(k, {'key': k, 'perms': 'dir'})
+                # Recursively call the function to list contents of the subdirectory.
                 _list_bucket_contents(bucket, prefix=k)
 
-            # Files
+            # Handle files at the current prefix level.
             files = result.get('Contents', [])
             for f in files:
                 k = f.get('Key')
-                # print_area(k, {'key': k, 'perms': 'file'})
+                # Add each file key to the list.
                 file_keys.append(k)
 
+        # Start the recursive process to list all contents from the given prefix.
         _list_bucket_contents(selected_area, prefix)
+
+        # Return the final list of all file keys found in the bucket.
         return file_keys
 
 

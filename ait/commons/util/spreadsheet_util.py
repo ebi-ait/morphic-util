@@ -590,15 +590,16 @@ class SpreadsheetSubmitter:
 
     def list_sheets(self):
         """
-        Retrieves the names of all sheets present in the Excel file.
+        Retrieves the names of all sheets present in the Excel file,
+        trimming any leading or trailing spaces.
 
         Returns:
         --------
         list
-            A list of sheet names present in the Excel file.
+            A list of trimmed sheet names present in the Excel file.
         """
         xls = pd.ExcelFile(self.file_path, engine='openpyxl')
-        return xls.sheet_names
+        return [sheet_name.strip() for sheet_name in xls.sheet_names]
 
     def input_file_to_data_frames(self, sheet_name, action):
         if action.upper() == 'MODIFY':

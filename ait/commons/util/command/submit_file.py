@@ -101,6 +101,14 @@ class CmdSubmitFile:
             "the submit option, and link your dataset to your study before proceeding with this submission."
         ))
 
+        if self.dataset:
+            try:
+                self.provider_api.get(f"{self.BASE_URL}/datasets/{self.dataset}",
+                                      self.access_token)
+            except Exception as e:
+                print(f"Dataset does not exist {self.dataset}")
+                sys.exit(1)
+
         # Validate file argument only if action is not DELETE
         if self.action != 'DELETE':
             self.file = self._get_required_arg('file', "File is mandatory")

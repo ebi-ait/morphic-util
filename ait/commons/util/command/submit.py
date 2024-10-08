@@ -191,7 +191,7 @@ class CmdSubmit:
         transform(file): Transforms the input file to a JSON object.
         put_to_provider_api(url, access_token): Sends a PUT request to the provider API.
     """
-    BASE_URL = 'http://localhost:8080'
+    BASE_URL = 'https://api.ingest.dev.archive.morphic.bio/'
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 

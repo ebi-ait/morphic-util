@@ -1,7 +1,7 @@
 from pathlib import Path
 
 NAME = 'morphic-util'
-VERSION = '1.0.3'
+VERSION = '1.0.4'
 DESC = 'CLI tool for submitting your analysis data and metadata'
 AUTHOR = 'dgupta'
 AUTHOR_EMAIL = 'dgupta@ebi.ac.uk'

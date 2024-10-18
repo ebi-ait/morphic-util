@@ -246,7 +246,7 @@ class CmdSubmit:
                 if success:
                     print(f"Updated cell line: {cell_line.id} / {cell_line.biomaterial_id}")
                     update_dataframe(cell_lines_df, cell_line.id, cell_line.biomaterial_id,
-                                     'cell_line.biomaterial_core.biomaterial_id')
+                                     'clonal_cell_line.label')
                     return cell_line.id
                 else:
                     errors.append(f"Failed to update cell line: {cell_line.id} / {cell_line.biomaterial_id}")
@@ -259,7 +259,7 @@ class CmdSubmit:
                 cell_line_entity_id = self.create_cell_line_entity(cell_line, expression_alterations,
                                                                    submission_envelope_id, dataset_id, access_token)
                 update_dataframe(cell_lines_df, cell_line_entity_id, cell_line.biomaterial_id,
-                                 'cell_line.biomaterial_core.biomaterial_id')
+                                 'clonal_cell_line.label')
                 return cell_line_entity_id
             except Exception as e:
                 errors.append(f"Failed to create cell line: {cell_line.biomaterial_id}")
@@ -352,7 +352,7 @@ class CmdSubmit:
 
                     update_dataframe(differentiated_cell_lines_df, differentiated_cell_line.id,
                                      differentiated_cell_line.biomaterial_id,
-                                     'differentiated_cell_line.biomaterial_core.biomaterial_id')
+                                     'differentiated_product.label')
                     return differentiated_cell_line.id
                 else:
                     errors.append(f"Failed to update differentiated cell line: {differentiated_cell_line.id} / "
@@ -372,7 +372,7 @@ class CmdSubmit:
                                                                                           submission_envelope_id)
                 update_dataframe(differentiated_cell_lines_df, differentiated_cell_line_id,
                                  differentiated_cell_line.biomaterial_id,
-                                 'differentiated_cell_line.biomaterial_core.biomaterial_id')
+                                 'differentiated_product.label')
                 return differentiated_cell_line_id
             except Exception as e:
                 errors.append(f"Failed to create differentiated cell line: {differentiated_cell_line.biomaterial_id}")
@@ -552,7 +552,7 @@ class CmdSubmit:
 
                     update_dataframe(library_preparations_df, library_preparation.id,
                                      library_preparation.biomaterial_id,
-                                     'library_preparation.biomaterial_core.biomaterial_id')
+                                     'library_preparation.label')
                     return library_preparation.id
                 else:
                     errors.append(f"Failed to update library preparation biomaterial: {library_preparation.id} / "
@@ -570,7 +570,7 @@ class CmdSubmit:
                                                                                        submission_envelope_id)
                 update_dataframe(library_preparations_df, library_preparation_entity_id,
                                  library_preparation.biomaterial_id,
-                                 'library_preparation.biomaterial_core.biomaterial_id')
+                                 'library_preparation.label')
 
                 return library_preparation_entity_id
             except Exception as e:
@@ -743,7 +743,7 @@ class CmdSubmit:
 
                     update_dataframe(sequencing_file_df, sequencing_file.id,
                                      sequencing_file.file_name,
-                                     'sequence_file.file_core.file_name')
+                                     'sequence_file.label')
                     return sequencing_file.id
                 else:
                     errors.append(
@@ -761,7 +761,7 @@ class CmdSubmit:
                                                                                submission_envelope_id)
                 update_dataframe(sequencing_file_df, sequencing_file_entity_id,
                                  sequencing_file.file_name,
-                                 'sequence_file.file_core.file_name')
+                                 'sequence_file.label')
 
                 return sequencing_file_entity_id
             except Exception as e:
@@ -929,7 +929,7 @@ class CmdSubmit:
         try:
             for cell_line in cell_lines:
                 for differentiated_or_undifferentiated_cell_line in differentiated_or_undifferentiated_cell_lines:
-                    if cell_line.biomaterial_id == differentiated_or_undifferentiated_cell_line.input_biomaterial_id:
+                    if cell_line.biomaterial_id == differentiated_or_undifferentiated_cell_line.cell_line_biomaterial_id:
                         self.link_cell_line_and_differentiated_cell_line(access_token,
                                                                          cell_line,
                                                                          differentiated_or_undifferentiated_cell_line,
@@ -939,7 +939,8 @@ class CmdSubmit:
                                                                          errors)
             for differentiated_or_undifferentiated_cell_line in differentiated_or_undifferentiated_cell_lines:
                 for library_preparation in library_preparations:
-                    if differentiated_or_undifferentiated_cell_line.biomaterial_id == library_preparation.differentiated_biomaterial_id:
+                    if (differentiated_or_undifferentiated_cell_line.biomaterial_id ==
+                            library_preparation.differentiated_biomaterial_id):
                         self.link_differentiated_and_library_preparation(
                             access_token,
                             differentiated_or_undifferentiated_cell_line,

@@ -65,7 +65,7 @@ def _create_expression_alterations(submission_instance,
             .astype(object))
         expression_alterations_df.loc[
             expression_alterations_df[
-                'expression_alteration_id'] == expression_alteration.expression_alteration_id,
+                'expression_alteration.label'] == expression_alteration.expression_alteration_id,
             expression_alterations_entity_id_column_name
         ] = expression_alteration_id
 
@@ -354,7 +354,7 @@ class CmdSubmitFile:
 
             # Parse different sections of the spreadsheet
             expression_alterations, expression_alterations_df = parser.get_expression_alterations(
-                'Expression alteration strategy', self.action, self.validation_errors
+                'Expression alteration', self.action, self.validation_errors
             )
 
             cell_lines, cell_lines_df, parent_cell_line_name = parser.get_cell_lines(
@@ -426,7 +426,7 @@ class CmdSubmitFile:
                 "differentiated_cell_line_sheet_name": differentiated_cell_line_sheet_name,
                 "undifferentiated_cell_line_sheet_name": undifferentiated_cell_line_sheet_name
             }
-        except Exception:
+        except Exception as e:
             self.validation_errors.append(f"Spreadsheet is invalid {self.file}")
             return None
 
@@ -443,7 +443,7 @@ class CmdSubmitFile:
             # Exit now if there are validation errors in the spreadsheet
             if self.validation_errors:
                 raise ValidationError(self.validation_errors)
-        except ValidationError as e:
+        except ValidationError:
             # Check if the error is related to a missing sheet
             missing_sheet_errors = [msg for msg in self.validation_errors if "Missing sheet" in msg]
 
@@ -451,13 +451,15 @@ class CmdSubmitFile:
                 # Extract the sheet name(s) from the errors
                 missing_sheets = ', '.join([msg.split("'")[1] for msg in missing_sheet_errors])
                 # Ask the user whether to proceed
+                """
                 user_response = input(
                     f"A required sheet '{missing_sheets}' is missing. Do you want to proceed anyway? (yes/no): ").strip().lower()
                 if user_response == 'yes':
                     print("Proceeding with execution...")
                 else:
-                    print("Execution terminated due to missing required sheet.")
-                    sys.exit(1)
+                """
+                print("Execution terminated due to missing required sheet.")
+                sys.exit(1)
             else:
                 # Print the error message
                 # print(f"Validation Error: {e.errors}")

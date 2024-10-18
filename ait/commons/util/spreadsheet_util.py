@@ -3,6 +3,7 @@ import traceback
 import pandas as pd
 import json
 import numpy as np
+import json
 
 """
 class MissingMandatoryFieldError(Exception):
@@ -67,20 +68,24 @@ class CellLine:
     def __init__(self,
                  biomaterial_id,
                  description,
-                 derived_from_accession,
+                 parental_cell_line_name,
                  clone_id,
                  protocol_id,
                  zygosity,
                  cell_type,
+                 treatment_condition,
+                 wt_control_status,
                  expression_alteration_id,
                  id):
         self.biomaterial_id = biomaterial_id
         self.description = description
-        self.derived_from_accession = derived_from_accession
+        self.parental_cell_line_name = parental_cell_line_name
         self.clone_id = clone_id
         self.protocol_id = protocol_id
         self.zygosity = zygosity
         self.cell_type = cell_type
+        self.treatment_condition = treatment_condition
+        self.wt_control_status = wt_control_status
         self.differentiated_cell_lines = []
         self.expression_alteration_id = expression_alteration_id
         self.id = id
@@ -93,22 +98,28 @@ class CellLine:
 
     def to_dict(self):
         content = {
-            "label": self.biomaterial_id,
-            "description": self.description,
-            "derived_from_cell_line": self.derived_from_accession,
-            "zygosity": self.zygosity,
-            "type": self.cell_type
+            "label": self.biomaterial_id,  # matches 'label' in schema
+            "description": self.description,  # matches 'description' in schema
+            "zygosity": self.zygosity,  # matches 'zygosity' in schema
+            "type": self.cell_type,  # matches 'type' in schema
+            "parental_cell_line_name": self.parental_cell_line_name  # matches 'parental_cell_line_name' in schema
         }
 
-        # Only add optional/custom fields if they are provided
+        # Optional fields - add them only if they are provided
         if self.clone_id:
-            content["clone_id"] = self.clone_id  # Not in schema, custom field
+            content["clone_id"] = self.clone_id  # matches 'clone_id' in schema
 
         if self.protocol_id:
-            content["protocol_id"] = self.protocol_id  # Not in schema, custom field
+            content[
+                "cell_line_generation_protocol"] = self.protocol_id  # matches 'cell_line_generation_protocol' in schema
 
-        if self.expression_alteration_id:
-            content["expression_alteration_id"] = self.expression_alteration_id  # Not in schema, custom field
+        if self.treatment_condition:
+            content[
+                "treatment_condition"] = self.treatment_condition  # matches 'cell_line_generation_protocol' in schema
+
+        if self.wt_control_status:
+            content[
+                "wt_control_status"] = self.wt_control_status  # matches 'cell_line_generation_protocol' in schema
 
         return {
             "content": content
@@ -118,28 +129,28 @@ class CellLine:
 class ExpressionAlterationStrategy:
     def __init__(self,
                  expression_alteration_id,
-                 protocol_id,
+                 parent_protocol_id,
                  allele_specific,
-                 altered_gene_symbols,
-                 altered_gene_ids,
+                 altered_gene_symbol,
+                 target_gene_hgnc_id,
                  targeted_genomic_region,
                  expected_alteration_type,
-                 sgrna_target,
-                 protocol_method_text,
+                 editing_strategy,
                  altered_locus,
                  guide_sequence,
+                 method,
                  id):
         self.expression_alteration_id = expression_alteration_id
-        self.protocol_id = protocol_id
+        self.parent_protocol_id = parent_protocol_id
         self.allele_specific = allele_specific
-        self.altered_gene_symbols = altered_gene_symbols
-        self.altered_gene_ids = altered_gene_ids
+        self.altered_gene_symbol = altered_gene_symbol
+        self.target_gene_hgnc_id = target_gene_hgnc_id
         self.targeted_genomic_region = targeted_genomic_region
         self.expected_alteration_type = expected_alteration_type
-        self.sgrna_target = sgrna_target
-        self.protocol_method_text = protocol_method_text
+        self.editing_strategy = editing_strategy
         self.altered_locus = altered_locus
         self.guide_sequence = guide_sequence
+        self.method = method
         self.id = id
 
     def __repr__(self):
@@ -148,43 +159,50 @@ class ExpressionAlterationStrategy:
     def to_dict(self):
         return {
             "content": {
-                "expression_alteration_label": self.expression_alteration_id,
-                "protocol_id": self.protocol_id,
-                "allele_specific": self.allele_specific,
-                "altered_gene_symbols": self.altered_gene_symbols,
-                "altered_gene_ids": self.altered_gene_ids,
-                "targeted_genomic_region": self.targeted_genomic_region,
-                "expected_alteration_type": self.expected_alteration_type,
-                "sgrna_target": self.sgrna_target,
-                "protocol_method_text": self.protocol_method_text,
-                "altered_locus": self.altered_locus,
-                "guide_sequence": self.guide_sequence,
-                "id": self.id
+                "expression_alteration_id": self.expression_alteration_id,
+                "parent_protocol_id": self.parent_protocol_id,
+                "genes": [
+                    {
+                        "allele_specific": self.allele_specific,
+                        "altered_gene_symbol": self.altered_gene_symbol,
+                        "target_gene_hgnc_id": self.target_gene_hgnc_id,
+                        "targeted_genomic_region": self.targeted_genomic_region,
+                        "expected_alteration_type": self.expected_alteration_type,
+                        "editing_strategy": self.editing_strategy,
+                        "altered_locus": self.altered_locus,
+                        "guide_sequence": self.guide_sequence
+                    }
+                ],
+                "method": self.method,
             }
         }
 
 
 class DifferentiatedCellLine:
     def __init__(self,
-                 biomaterial_id,
+                 biomaterial_id,  # Maps to 'label'
                  description,
-                 input_biomaterial_id,
-                 protocol_id,
-                 timepoint_value,
-                 timepoint_unit,
+                 cell_line_biomaterial_id,  # Maps to 'clonal_cell_line_label'
+                 differentiated_product_protocol_id,
                  terminally_differentiated,
                  model_system,
-                 id):
-        self.biomaterial_id = biomaterial_id
+                 timepoint_value,
+                 timepoint_unit,
+                 treatment_condition=None,  # New field as per schema
+                 wt_control_status=None,  # New field as per schema
+                 id=None):  # Optional, custom field
+        self.biomaterial_id = biomaterial_id  # This maps to 'label' in the schema
         self.description = description
-        self.input_biomaterial_id = input_biomaterial_id
-        self.protocol_id = protocol_id
-        self.timepoint_value = timepoint_value
-        self.timepoint_unit = timepoint_unit
+        self.cell_line_biomaterial_id = cell_line_biomaterial_id  # Maps to 'clonal_cell_line_label'
+        self.differentiated_product_protocol_id = differentiated_product_protocol_id
         self.terminally_differentiated = terminally_differentiated
         self.model_system = model_system
+        self.timepoint_value = timepoint_value
+        self.timepoint_unit = timepoint_unit
+        self.treatment_condition = treatment_condition  # Added to match schema
+        self.wt_control_status = wt_control_status  # Added to match schema
         self.library_preparations = []
-        self.id = id
+        self.id = id  # Custom field not in the schema
 
     def add_library_preparation(self, library_preparation):
         self.library_preparations.append(library_preparation)
@@ -196,18 +214,20 @@ class DifferentiatedCellLine:
         content = {
             "label": self.biomaterial_id,
             "description": self.description,
+            "clonal_cell_line_id": self.cell_line_biomaterial_id,
+            "differentiated_product_protocol_id": self.differentiated_product_protocol_id,
+            "terminally_differentiated": self.terminally_differentiated,
+            "model_system": self.model_system,
             "timepoint_value": self.timepoint_value,
             "timepoint_unit": self.timepoint_unit,
-            "terminally_differentiated": self.terminally_differentiated,
-            "model_system": self.model_system
         }
 
-        # Only add optional/custom fields if they are provided
-        if self.input_biomaterial_id:
-            content["input_biomaterial_id"] = self.input_biomaterial_id  # Not in schema, custom field
+        # Add optional fields only if they are provided
+        if self.treatment_condition:
+            content["treatment_condition"] = self.treatment_condition
 
-        if self.protocol_id:
-            content["protocol_id"] = self.protocol_id  # Not in schema, custom field
+        if self.wt_control_status:
+            content["wt_control_status"] = self.wt_control_status
 
         return {
             "content": content
@@ -218,7 +238,6 @@ class LibraryPreparation:
     def __init__(self,
                  biomaterial_id,
                  protocol_id,
-                 dissociation_protocol_id,
                  differentiated_biomaterial_id,
                  average_fragment_size,
                  input_amount_value,
@@ -232,7 +251,6 @@ class LibraryPreparation:
                  id):
         self.biomaterial_id = biomaterial_id
         self.protocol_id = protocol_id
-        self.dissociation_protocol_id = dissociation_protocol_id
         self.differentiated_biomaterial_id = differentiated_biomaterial_id
         self.average_fragment_size = average_fragment_size
         self.input_amount_value = input_amount_value
@@ -253,7 +271,7 @@ class LibraryPreparation:
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self):
-        # Helper function to handle invalid JSON values
+        # Helper function to handle invalid JSON values (e.g., NaN, infinite)
         def convert_to_valid_json_value(value):
             if isinstance(value, float) and (np.isnan(value) or not np.isfinite(value)):
                 return None
@@ -261,6 +279,7 @@ class LibraryPreparation:
 
         content = {
             "label": self.biomaterial_id,
+            "library_preparation_protocol_id": self.protocol_id,
             "average_fragment_size": convert_to_valid_json_value(self.average_fragment_size),
             "input_amount_value": convert_to_valid_json_value(self.input_amount_value),
             "input_amount_unit": self.input_amount_unit,
@@ -273,12 +292,8 @@ class LibraryPreparation:
         }
 
         # Add optional/custom fields if they are provided
-        if self.protocol_id:
-            content["protocol_id"] = self.protocol_id  # Not in schema, custom field
-        if self.dissociation_protocol_id:
-            content["dissociation_protocol_id"] = self.dissociation_protocol_id  # Not in schema, custom field
         if self.differentiated_biomaterial_id:
-            content["differentiated_biomaterial_id"] = self.differentiated_biomaterial_id  # Not in schema, custom field
+            content["differentiated_biomaterial_id"] = self.differentiated_biomaterial_id
 
         return {
             "content": content
@@ -506,7 +521,7 @@ def merge_cell_line_and_differentiated_cell_line(cell_lines,
         source_entities=cell_lines,
         target_entities=differentiated_cell_lines,
         source_attr="biomaterial_id",
-        target_attr="input_biomaterial_id",
+        target_attr="cell_line_biomaterial_id",
         source_type="Cell line",
         target_type="Differentiated Cell line",
         errors=errors
@@ -516,15 +531,15 @@ def merge_cell_line_and_differentiated_cell_line(cell_lines,
     cell_line_ids = {cell_line.biomaterial_id for cell_line in cell_lines}
 
     for differentiated_cell_line in differentiated_cell_lines:
-        if differentiated_cell_line.input_biomaterial_id not in cell_line_ids:
+        if differentiated_cell_line.cell_line_biomaterial_id not in cell_line_ids:
             missing_parent_entity_error.add_error("Cell Line",
                                                   "Differentiated Cell line",
-                                                  differentiated_cell_line.biomaterial_id,
+                                                  differentiated_cell_line.label,
                                                   errors)
 
     for cell_line in cell_lines:
         for differentiated_cell_line in differentiated_cell_lines:
-            if differentiated_cell_line.input_biomaterial_id == cell_line.biomaterial_id:
+            if differentiated_cell_line.cell_line_biomaterial_id == cell_line.biomaterial_id:
                 cell_line.add_differentiated_cell_line(differentiated_cell_line)
 
 
@@ -648,18 +663,18 @@ class SpreadsheetSubmitter:
         parent_cell_line_names = []
 
         # Check if the required column exists
-        if 'cell_line.biomaterial_core.biomaterial_id' not in df.columns:
+        if 'clonal_cell_line.label' not in df.columns:
             errors.append(
-                f"The column 'cell_line.biomaterial_core.biomaterial_id' does not exist in the {sheet_name} sheet. "
+                f"The column 'clonal_cell_line.label' does not exist in the {sheet_name} sheet. "
                 f"The rest of the file will not be processed")
             return [], df
 
         # Filter rows where biomaterial_id is not null
-        df = df[df['cell_line.biomaterial_core.biomaterial_id'].notna()]
+        df = df[df['clonal_cell_line.label'].notna()]
         # Replace invalid float values with None
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
         # Define columns to check for invalid starting values
-        cols_to_check = ['cell_line.biomaterial_core.biomaterial_id']
+        cols_to_check = ['clonal_cell_line.label']
         invalid_start_values = (
             'FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
             'cell_line.biomaterial_core.biomaterial_id'
@@ -668,7 +683,7 @@ class SpreadsheetSubmitter:
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(invalid_start_values)).all(axis=1)
         df_filtered = df[mask]
         # Check for a unique value in 'cell_line.derived_cell_line_accession'
-        derived_col = 'cell_line.derived_cell_line_accession'
+        derived_col = 'clonal_cell_line.parental_cell_line_name'
 
         if derived_col in df_filtered.columns:
             parent_cell_line_names = df_filtered[derived_col].dropna().unique()
@@ -683,30 +698,32 @@ class SpreadsheetSubmitter:
         cell_lines = []
 
         for _, row in df_filtered.iterrows():
-            biomaterial_id = row['cell_line.biomaterial_core.biomaterial_id']
-            derived_from_accession = row.get('cell_line.derived_cell_line_accession')
-            cell_type = row.get('cell_line.type')
-            expression_alteration_id = row.get('expression_alteration_id')
+            label = row['clonal_cell_line.label']
+            parental_cell_line_name = row.get('clonal_cell_line.parental_cell_line_name')
+            cell_type = row.get('clonal_cell_line.type')
+            expression_alteration_id = row.get('expression_alteration.label')
 
             # Error handling for missing mandatory fields
-            if pd.isnull(biomaterial_id):
-                errors.append("Biomaterial ID cannot be null in any row of the Cell line sheet.")
+            if pd.isnull(label):
+                errors.append("Biomaterial ID cannot be null in any row of the Cell line/ Clonal cell line sheet.")
 
-            if any(pd.isnull(field) for field in [derived_from_accession, cell_type]):
+            if any(pd.isnull(field) for field in [parental_cell_line_name, cell_type]):
                 errors.append(
-                    f"Mandatory fields (derived_accession, cell_type, expression_alteration_id) are required for Cell "
-                    f"line entity: {biomaterial_id}")
+                    f"Mandatory fields (parental_cell_line_name, clonal_cell_line.type, expression_alteration.label) are required for Cell "
+                    f"line/ Clonal cell line entity: {label}")
 
             cell_lines.append(
                 CellLine(
-                    biomaterial_id=biomaterial_id,
-                    description=row.get('cell_line.biomaterial_core.biomaterial_description'),
-                    derived_from_accession=derived_from_accession,
-                    clone_id=row.get('cell_line.clone_id'),
-                    protocol_id=row.get('gene_expression_alteration_protocol.protocol_core.protocol_id'),
-                    zygosity=row.get('cell_line.zygosity'),
+                    biomaterial_id=label,
+                    description=row.get('clonal_cell_line.description'),
+                    parental_cell_line_name=parental_cell_line_name,
+                    clone_id=row.get('clonal_cell_line.clone_id'),
+                    protocol_id=row.get('clonal_cell_line.cell_line_generation_protocol'),
+                    zygosity=row.get('clonal_cell_line.zygosity'),
                     cell_type=cell_type,
                     expression_alteration_id=expression_alteration_id,
+                    wt_control_status=row.get('clonal_cell_line.wt_control_status'),
+                    treatment_condition=row.get('clonal_cell_line.treatment_condition'),
                     id=row.get('Id')
                 )
             )
@@ -739,16 +756,16 @@ class SpreadsheetSubmitter:
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
-        if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
-            errors.append(f"The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not "
+        if 'differentiated_product.label' not in df.columns:
+            errors.append(f"The column 'differentiated_product.label' does not "
                           f"exist in {sheet_name} name. The rest of the file will not be processed")
             return [], df
 
         # Filter rows where biomaterial_id is not null
-        df = df[df['differentiated_cell_line.biomaterial_core.biomaterial_id'].notna()]
+        df = df[df['differentiated_product.label'].notna()]
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
         # Define columns to check for values starting with 'ABC' or 'XYZ'
-        cols_to_check = ['differentiated_cell_line.biomaterial_core.biomaterial_id']
+        cols_to_check = ['differentiated_product.label']
         # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
             ('FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
@@ -759,19 +776,19 @@ class SpreadsheetSubmitter:
         differentiated_cell_lines = []
 
         for _, row in df_filtered.iterrows():
-            differentiated_biomaterial_id = row['differentiated_cell_line.biomaterial_core.biomaterial_id']
-            biomaterial_id = row.get('cell_line.biomaterial_core.biomaterial_id')
+            label = row['differentiated_product.label']
+            parent_biomaterial_id = row.get('clonal_cell_line.label')
 
             # Check if biomaterial_id is null
-            if pd.isnull(differentiated_biomaterial_id):
+            if pd.isnull(label):
                 errors.append("Differentiated Cell line ID cannot be null in any row of the Differentiated Cell line "
                               "sheet.")
                 # raise MissingMandatoryFieldError("Differentiated Cell line ID cannot be null in any row.")
 
             # Check if derived_accession and cell_type are present
-            if pd.isnull(biomaterial_id):
+            if pd.isnull(parent_biomaterial_id):
                 errors.append(f"Input Cell line ID cannot be null for Differentiated Cell line:  "
-                              f"{differentiated_biomaterial_id}")
+                              f"{label}")
                 """
                 raise MissingMandatoryFieldError(
                     "Input Cell line ID cannot be null. " + differentiated_biomaterial_id)
@@ -780,20 +797,24 @@ class SpreadsheetSubmitter:
             # Create DifferentiatedCellLine objects from filtered DataFrame rows
             differentiated_cell_lines.append(
                 DifferentiatedCellLine(
-                    biomaterial_id=differentiated_biomaterial_id,
-                    description=row.get('differentiated_cell_line.biomaterial_core.biomaterial_description'),
-                    input_biomaterial_id=biomaterial_id,
-                    protocol_id=row.get('differentiation_protocol.protocol_core.protocol_id'),
-                    timepoint_value=row.get('differentiated_cell_line.timepoint_value'),
-                    timepoint_unit=row.get('differentiated_cell_line.timepoint_unit.text'),
-                    terminally_differentiated=row.get('differentiated_cell_line.terminally_differentiated'),
-                    model_system=row.get('differentiated_cell_line.model_organ.text'),
+                    biomaterial_id=label,
+                    description=row.get('differentiated_product.biomaterial_core.biomaterial_description'),
+                    cell_line_biomaterial_id=parent_biomaterial_id,
+                    differentiated_product_protocol_id=row.get(
+                        'differentiated_product.differentiated_product_protocol_id'),
+                    treatment_condition=row.get('differentiated_product.treatment_condition'),
+                    wt_control_status=row.get('differentiated_product.wt_control_status'),
+                    timepoint_value=row.get('differentiated_product.timepoint_value'),
+                    timepoint_unit=row.get('differentiated_product.timepoint_unit'),
+                    terminally_differentiated=row.get('differentiated_product.terminally_differentiated'),
+                    model_system=row.get('differentiated_product.model_system'),
                     id=row.get('Id')
                 )
             )
 
         return differentiated_cell_lines, df_filtered
 
+    # TODO: review
     def parse_undifferentiated_cell_lines(self,
                                           sheet_name,
                                           action,
@@ -820,16 +841,16 @@ class SpreadsheetSubmitter:
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
-        if 'differentiated_cell_line.biomaterial_core.biomaterial_id' not in df.columns:
-            errors.append(f"The column 'differentiated_cell_line.biomaterial_core.biomaterial_id' does not "
-                          f"exist in {sheet_name}. The rest of the file will not be processed")
+        if 'differentiated_product.label' not in df.columns:
+            errors.append(f"The column 'differentiated_product.label' does not "
+                          f"exist in {sheet_name} name. The rest of the file will not be processed")
             return [], df
 
         # Filter rows where biomaterial_id is not null
-        df = df[df['differentiated_cell_line.biomaterial_core.biomaterial_id'].notna()]
+        df = df[df['differentiated_product.label'].notna()]
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
         # Define columns to check for values starting with 'ABC' or 'XYZ'
-        cols_to_check = ['differentiated_cell_line.biomaterial_core.biomaterial_id']
+        cols_to_check = ['differentiated_product.label']
         # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
             ('FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
@@ -840,19 +861,19 @@ class SpreadsheetSubmitter:
         undifferentiated_cell_lines = []
 
         for _, row in df_filtered.iterrows():
-            differentiated_biomaterial_id = row['differentiated_cell_line.biomaterial_core.biomaterial_id']
-            biomaterial_id = row.get('cell_line.biomaterial_core.biomaterial_id')
+            label = row['differentiated_product.label']
+            parent_biomaterial_id = row.get('differentiated_product.differentiated_product_protocol_id')
 
             # Check if biomaterial_id is null
-            if pd.isnull(differentiated_biomaterial_id):
+            if pd.isnull(label):
                 errors.append("Differentiated Cell line ID cannot be null in any row of the Differentiated Cell line "
                               "sheet.")
                 # raise MissingMandatoryFieldError("Differentiated Cell line ID cannot be null in any row.")
 
             # Check if derived_accession and cell_type are present
-            if pd.isnull(biomaterial_id):
+            if pd.isnull(parent_biomaterial_id):
                 errors.append(f"Input Cell line ID cannot be null for Differentiated Cell line:  "
-                              f"{differentiated_biomaterial_id}")
+                              f"{label}")
                 """
                 raise MissingMandatoryFieldError(
                     "Input Cell line ID cannot be null. " + differentiated_biomaterial_id)
@@ -861,14 +882,17 @@ class SpreadsheetSubmitter:
             # Create DifferentiatedCellLine objects from filtered DataFrame rows
             undifferentiated_cell_lines.append(
                 DifferentiatedCellLine(
-                    biomaterial_id=differentiated_biomaterial_id,
-                    description=row.get('differentiated_cell_line.biomaterial_core.biomaterial_description'),
-                    input_biomaterial_id=biomaterial_id,
-                    protocol_id=row.get('differentiation_protocol.protocol_core.protocol_id'),
-                    timepoint_value=row.get('differentiated_cell_line.timepoint_value'),
-                    timepoint_unit=row.get('differentiated_cell_line.timepoint_unit.text'),
-                    terminally_differentiated=row.get('differentiated_cell_line.terminally_differentiated'),
-                    model_system=row.get('differentiated_cell_line.model_organ.text'),
+                    biomaterial_id=label,
+                    description=row.get('differentiated_product.biomaterial_core.biomaterial_description'),
+                    cell_line_biomaterial_id=parent_biomaterial_id,
+                    differentiated_product_protocol_id=row.get(
+                        'differentiated_product.differentiated_product_protocol_id'),
+                    treatment_condition=row.get('differentiated_product.treatment_condition'),
+                    wt_control_status=row.get('differentiated_product.wt_control_status'),
+                    timepoint_value=row.get('differentiated_product.timepoint_value'),
+                    timepoint_unit=row.get('differentiated_product.timepoint_unit'),
+                    terminally_differentiated=row.get('differentiated_product.terminally_differentiated'),
+                    model_system=row.get('differentiated_product.model_system'),
                     id=row.get('Id')
                 )
             )
@@ -899,10 +923,9 @@ class SpreadsheetSubmitter:
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
         # Check if the required column exists
         required_columns = [
-            'library_preparation.biomaterial_core.biomaterial_id',
-            'dissociation_protocol.protocol_core.protocol_id',
-            'differentiated_cell_line.biomaterial_core.biomaterial_id',
-            'library_preparation_protocol.protocol_core.protocol_id'
+            'library_preparation.label',
+            'differentiated_product.label',
+            'library_preparation.library_preparation_protocol_id'
         ]
 
         for col in required_columns:
@@ -913,10 +936,10 @@ class SpreadsheetSubmitter:
                 return [], df
 
         # Filter rows where biomaterial_id is not null
-        df = df[df['library_preparation.biomaterial_core.biomaterial_id'].notna()]
+        df = df[df['library_preparation.label'].notna()]
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
         # Define columns to check for values starting with 'ABC' or 'XYZ'
-        cols_to_check = ['library_preparation.biomaterial_core.biomaterial_id']
+        cols_to_check = ['library_preparation.label']
         # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
             ('FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
@@ -927,19 +950,15 @@ class SpreadsheetSubmitter:
         library_preparations = []
 
         for _, row in df_filtered.iterrows():
-            library_preparation_id = row['library_preparation.biomaterial_core.biomaterial_id']
-            dissociation_protocol_id = row.get('dissociation_protocol.protocol_core.protocol_id')
-            differentiated_biomaterial_id = row.get('differentiated_cell_line.biomaterial_core.biomaterial_id')
-            library_preparation_protocol_id = row.get('library_preparation_protocol.protocol_core.protocol_id')
+            label = row['library_preparation.label']
+            differentiated_biomaterial_label = row.get('differentiated_product.label')
+            library_preparation_protocol_id = row.get('library_preparation.library_preparation_protocol_id')
 
             # Check if required fields are null
-            if pd.isnull(library_preparation_id):
+            if pd.isnull(label):
                 errors.append("Library Preparation ID cannot be null in any row of the Library Preparation sheet.")
                 # raise MissingMandatoryFieldError("Library Preparation ID cannot be null in any row.")
-            if pd.isnull(dissociation_protocol_id):
-                errors.append("Dissociation Protocol ID cannot be null in any row of the Library Preparation sheet.")
-                # raise MissingMandatoryFieldError("Dissociation Protocol ID cannot be null in any row.")
-            if pd.isnull(differentiated_biomaterial_id):
+            if pd.isnull(differentiated_biomaterial_label):
                 errors.append("Differentiated Cell Line ID cannot be null in any row of the Library Preparation sheet.")
                 # raise MissingMandatoryFieldError("Differentiated Cell Line ID cannot be null in any row.")
             if pd.isnull(library_preparation_protocol_id):
@@ -950,10 +969,9 @@ class SpreadsheetSubmitter:
             # Create LibraryPreparation objects from filtered DataFrame rows
             library_preparations.append(
                 LibraryPreparation(
-                    biomaterial_id=library_preparation_id,
+                    biomaterial_id=label,
                     protocol_id=library_preparation_protocol_id,
-                    dissociation_protocol_id=dissociation_protocol_id,
-                    differentiated_biomaterial_id=differentiated_biomaterial_id,
+                    differentiated_biomaterial_id=differentiated_biomaterial_label,
                     average_fragment_size=row.get('library_preparation.average_fragment_size'),
                     input_amount_value=row.get('library_preparation.input_amount_value'),
                     input_amount_unit=row.get('library_preparation.input_amount_unit'),
@@ -995,9 +1013,9 @@ class SpreadsheetSubmitter:
 
         # Check if the required column exists
         required_columns = [
-            'sequence_file.file_core.file_name',
-            'library_preparation.biomaterial_core.biomaterial_id',
-            'sequencing_protocol.protocol_core.protocol_id',
+            'sequence_file.label',
+            'library_preparation.label',
+            'sequence_file.extension',
             'sequence_file.read_index'
         ]
 
@@ -1009,15 +1027,15 @@ class SpreadsheetSubmitter:
                 return [], df
 
         # Filter rows where file_name is not null
-        df = df[df['sequence_file.file_core.file_name'].notna()]
+        df = df[df['sequence_file.label'].notna()]
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
         # Define columns to check for values starting with 'ABC' or 'XYZ'
-        cols_to_check = ['sequence_file.file_core.file_name']
+        cols_to_check = ['sequence_file.label']
         # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
             ('FILL OUT INFORMATION BELOW THIS ROW', 'The name of the file.',
              'Include the file extension in the file name. For example: R1.fastq.gz; codebook.json',
-             'sequence_file.file_core.file_name'))).all(axis=1)
+             'sequence_file.label'))).all(axis=1)
         # Apply the mask to filter out rows
         df_filtered = df[mask]
 
@@ -1025,9 +1043,8 @@ class SpreadsheetSubmitter:
         sequencing_files = []
 
         for _, row in df_filtered.iterrows():
-            file_name = row['sequence_file.file_core.file_name']
-            library_preparation_id = row.get('library_preparation.biomaterial_core.biomaterial_id')
-            sequencing_protocol_id = row.get('sequencing_protocol.protocol_core.protocol_id')
+            file_name = row['sequence_file.label']
+            library_preparation_id = row.get('library_preparation.label')
             read_index = row.get('sequence_file.read_index')
 
             # Check if required fields are null
@@ -1037,9 +1054,6 @@ class SpreadsheetSubmitter:
             if pd.isnull(library_preparation_id):
                 errors.append("Library Preparation ID cannot be null in any row of the Sequencing File sheet..")
                 # raise MissingMandatoryFieldError("Library Preparation ID cannot be null in any row.")
-            if pd.isnull(sequencing_protocol_id):
-                errors.append("Sequencing Protocol ID cannot be null in any row of the Sequencing File sheet..")
-                # raise MissingMandatoryFieldError("Sequencing Protocol ID cannot be null in any row.")
             if pd.isnull(read_index):
                 errors.append("Read Index cannot be null in any row of the Sequencing File sheet..")
                 # raise MissingMandatoryFieldError("Read Index cannot be null in any row.")
@@ -1054,7 +1068,6 @@ class SpreadsheetSubmitter:
                     read_length=None,
                     checksum=None,
                     library_preparation_id=library_preparation_id,
-                    sequencing_protocol_id=sequencing_protocol_id,
                     run_id=row.get('sequence_file.run_id'),
                     id=row.get('Id')
                 )
@@ -1091,22 +1104,22 @@ class SpreadsheetSubmitter:
             df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         except Exception as e:
             errors.append(f"Missing sheet '{sheet_name}': {e}")
-            return [], None
+            return [], None, False
 
         # Strip whitespace from column names
         df.columns = df.columns.str.strip()
 
         # Check if the required column exists
-        required_columns = ['expression_alteration_id']
+        required_columns = ['expression_alteration.label']
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
             errors.append(
                 f"The following required columns are missing in the Expression Alteration Strategy sheet: {', '.join(missing_columns)}")
-            return None, df, False  # Return if required columns are missing
+            return [], df, False  # Return if required columns are missing
 
-        # Filter rows where 'expression_alteration_id' is not null
-        df = df[df['expression_alteration_id'].notna()]
+        # Filter rows where 'expression_alteration.label' is not null
+        df = df[df['expression_alteration.label'].notna()]
         # Replace invalid float values (e.g., NaN, infinite) with None
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
@@ -1118,7 +1131,7 @@ class SpreadsheetSubmitter:
         )
 
         # Create a mask to filter out rows with unwanted starting values
-        mask = df['expression_alteration_id'].astype(str).str.startswith(unwanted_patterns)
+        mask = df['expression_alteration.label'].astype(str).str.startswith(unwanted_patterns)
         df_filtered = df[~mask]
 
         # Initialize the list of ExpressionAlterationStrategy objects
@@ -1127,17 +1140,17 @@ class SpreadsheetSubmitter:
         for _, row in df_filtered.iterrows():
             expression_alterations.append(
                 ExpressionAlterationStrategy(
-                    expression_alteration_id=row.get('expression_alteration_id'),
-                    protocol_id=row.get('gene_expression_alteration_protocol.protocol_core.protocol_id'),
-                    allele_specific=row.get('gene_expression_alteration_protocol.allele_specific'),
-                    altered_gene_symbols=row.get('gene_expression_alteration_protocol.altered_gene_symbols'),
-                    altered_gene_ids=row.get('gene_expression_alteration_protocol.altered_gene_ids'),
-                    targeted_genomic_region=row.get('gene_expression_alteration_protocol.targeted_genomic_region'),
-                    expected_alteration_type=row.get('gene_expression_alteration_protocol.expected_alteration_type'),
-                    sgrna_target=row.get('gene_expression_alteration_protocol.crispr.sgrna_target'),
-                    protocol_method_text=row.get('gene_expression_alteration_protocol.method.text'),
-                    altered_locus=None,  # Placeholder if required
-                    guide_sequence=None,  # Placeholder if required
+                    expression_alteration_id=row.get('expression_alteration.label'),
+                    parent_protocol_id=row.get('expression_alteration.parent_protocol_id'),
+                    allele_specific=row.get('expression_alteration.genes.allele_specific'),
+                    altered_gene_symbol=row.get('expression_alteration.genes.altered_gene_symbol'),
+                    target_gene_hgnc_id=row.get('expression_alteration.genes.target_gene_hgnc_id'),
+                    targeted_genomic_region=row.get('expression_alteration.genes.targeted_genomic_region'),
+                    expected_alteration_type=row.get('expression_alteration.genes.expected_alteration_type'),
+                    editing_strategy=row.get('expression_alteration.genes.editing_strategy'),
+                    altered_locus=row.get('expression_alteration.genes.altered_locus'),  # No longer a placeholder
+                    guide_sequence=row.get('expression_alteration.genes.guide_sequence'),  # No longer a placeholder
+                    method=row.get('expression_alteration.method'),
                     id=row.get('Id')
                 )
             )

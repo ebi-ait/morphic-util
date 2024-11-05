@@ -272,11 +272,11 @@ class CmdSubmitFile:
             sys.exit(1)
         except SubmissionError as e:
             print(f"Submission Error: {e.errors}")
-            self._delete_actions(self.submission_envelope_id, submission_instance, e)
+            # self._delete_actions(self.submission_envelope_id, submission_instance, e)
             sys.exit(1)
         except Exception as e:
             print(f"An unexpected error occurred during submission processing: {e}")
-            self._delete_actions(self.submission_envelope_id, submission_instance, e)
+            # self._delete_actions(self.submission_envelope_id, submission_instance, e)
             raise e  # Re-raise the exception to propagate it upwards
 
     def _handle_parent_cell_line(self, submission_instance, parent_cell_line_name):

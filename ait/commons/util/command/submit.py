@@ -14,7 +14,8 @@ from ait.commons.util.provider_api_util import APIProvider
 
 def matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
     return expression_alteration.expression_alteration_id.replace(" ",
-                                                                  "").strip() == cell_line.expression_alteration_id.replace(
+                                                                  "").strip() == cell_line.column_data.get(
+        "expression_alteration_id").replace(
         " ", "").strip()
 
 
@@ -309,7 +310,7 @@ class CmdSubmit:
                                                    cell_line_entity_id,
                                                    expression_alterations):
         for expression_alteration in expression_alterations:
-            if cell_line.expression_alteration_id is not None:
+            if cell_line.column_data.get("expression_alteration_id") is not None:
                 if matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
                     print(f"Linking cell line {cell_line.biomaterial_id} "
                           f"as derived by process of {expression_alteration.expression_alteration_id}")

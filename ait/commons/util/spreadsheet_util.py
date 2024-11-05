@@ -65,65 +65,81 @@ class OrphanedEntityError(Exception):
 
 
 class CellLine:
-    def __init__(self,
-                 biomaterial_id,
-                 description,
-                 parental_cell_line_name,
-                 clone_id,
-                 protocol_id,
-                 zygosity,
-                 cell_type,
-                 treatment_condition,
-                 wt_control_status,
-                 expression_alteration_id,
-                 id):
+    def __init__(self, biomaterial_id, column_data, id=None):
+        """
+        Initialize a CellLine object.
+
+        Parameters:
+        -----------
+        biomaterial_id : str
+            The value of the first column (must have values).
+        column_data : dict
+            A dictionary of dynamic column names and their corresponding values.
+        id : str, optional
+            An optional identifier for the cell line (default is None).
+        """
         self.biomaterial_id = biomaterial_id
-        self.description = description
-        self.parental_cell_line_name = parental_cell_line_name
-        self.clone_id = clone_id
-        self.protocol_id = protocol_id
-        self.zygosity = zygosity
-        self.cell_type = cell_type
-        self.treatment_condition = treatment_condition
-        self.wt_control_status = wt_control_status
-        self.differentiated_cell_lines = []
-        self.expression_alteration_id = expression_alteration_id
-        self.id = id
+        self.column_data = column_data  # Dictionary of dynamic column names to values
+        self.id = id  # Optional id field
+        self.differentiated_cell_lines = []  # List to hold differentiated cell lines
 
     def add_differentiated_cell_line(self, differentiated_cell_line):
+        """
+        Adds a differentiated cell line to the current cell line.
+
+        Parameters:
+        -----------
+        differentiated_cell_line : CellLine
+            A differentiated cell line (another instance of the CellLine class) to be added to this cell line.
+        """
         self.differentiated_cell_lines.append(differentiated_cell_line)
 
-    def __repr__(self):
-        return json.dumps(self.to_dict(), indent=2)
-
     def to_dict(self):
+        """
+        Convert the CellLine object into a dictionary following a specific content structure.
+        Dynamically map the values from the column_data dictionary to the required schema.
+        """
+        # Create a content dictionary with mandatory fields
         content = {
-            "label": self.biomaterial_id,  # matches 'label' in schema
-            "description": self.description,  # matches 'description' in schema
-            "zygosity": self.zygosity,  # matches 'zygosity' in schema
-            "type": self.cell_type,  # matches 'type' in schema
-            "parental_cell_line_name": self.parental_cell_line_name  # matches 'parental_cell_line_name' in schema
+            "label": self.biomaterial_id,  # Mandatory field (biomaterial_id)
         }
 
-        # Optional fields - add them only if they are provided
-        if self.clone_id:
-            content["clone_id"] = self.clone_id  # matches 'clone_id' in schema
+        # Dynamically map additional fields from column_data
+        # For each field, check if it exists in the dictionary and add it to content
+        if "description" in self.column_data:
+            content["description"] = self.column_data["description"]
 
-        if self.protocol_id:
-            content[
-                "cell_line_generation_protocol"] = self.protocol_id  # matches 'cell_line_generation_protocol' in schema
+        if "zygosity" in self.column_data:
+            content["zygosity"] = self.column_data["zygosity"]
 
-        if self.treatment_condition:
-            content[
-                "treatment_condition"] = self.treatment_condition  # matches 'cell_line_generation_protocol' in schema
+        if "type" in self.column_data:
+            content["type"] = self.column_data["type"]
 
-        if self.wt_control_status:
-            content[
-                "wt_control_status"] = self.wt_control_status  # matches 'cell_line_generation_protocol' in schema
+        if "parental_cell_line_name" in self.column_data:
+            content["parental_cell_line_name"] = self.column_data["parental_cell_line_name"]
+
+        # Optional fields (add them only if they are provided)
+        if "clone_id" in self.column_data:
+            content["clone_id"] = self.column_data["clone_id"]
+
+        if "cell_line_generation_protocol" in self.column_data:
+            content["cell_line_generation_protocol"] = self.column_data["cell_line_generation_protocol"]
+
+        if "treatment_condition" in self.column_data:
+            content["treatment_condition"] = self.column_data["treatment_condition"]
+
+        if "wt_control_status" in self.column_data:
+            content["wt_control_status"] = self.column_data["wt_control_status"]
+
+        if "expression_alteration_id" in self.column_data:
+            content["expression_alteration_id"] = self.column_data["expression_alteration_id"]
 
         return {
             "content": content
         }
+
+    def __repr__(self):
+        return json.dumps(self.to_dict(), indent=2)
 
 
 class ExpressionAlterationStrategy:
@@ -620,7 +636,10 @@ class SpreadsheetSubmitter:
         if action.upper() == 'MODIFY':
             skip_rows = 0
         else:
-            skip_rows = 3
+            if sheet_name == 'Clonal cell line':
+                skip_rows = 0
+            else:
+                skip_rows = 3
 
         # Load the Excel file to retrieve all sheet names
         with pd.ExcelFile(self.file_path, engine='openpyxl') as xls:
@@ -639,12 +658,9 @@ class SpreadsheetSubmitter:
 
         return df
 
-    def parse_cell_lines(self,
-                         sheet_name,
-                         action,
-                         errors):
+    def parse_cell_lines(self, sheet_name, action, errors):
         """
-        Parses data related to cell lines from a specified sheet in the Excel file.
+        Parses data related to cell lines from a specified sheet in the Excel file and creates CellLine objects.
 
         Parameters:
         -----------
@@ -655,35 +671,24 @@ class SpreadsheetSubmitter:
         --------
         tuple
             A tuple containing:
-            - list of CellLine objects parsed from the specified sheet.
+            - list of CellLine objects created from the parsed data.
             - pd.DataFrame with the parsed data.
+            - The single unique parental cell line name, if applicable.
         """
         df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         df.columns = df.columns.str.strip()
-        parent_cell_line_names = []
 
-        # Check if the required column exists
-        if 'clonal_cell_line.label' not in df.columns:
-            errors.append(
-                f"The column 'clonal_cell_line.label' does not exist in the {sheet_name} sheet. "
-                f"The rest of the file will not be processed")
-            return [], df
+        if df.empty:
+            errors.append(f"The sheet {sheet_name} is empty or does not exist.")
+            return [], df, None
 
-        # Filter rows where biomaterial_id is not null
-        df = df[df['clonal_cell_line.label'].notna()]
-        # Replace invalid float values with None
-        df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-        # Define columns to check for invalid starting values
-        cols_to_check = ['clonal_cell_line.label']
-        invalid_start_values = (
-            'FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
-            'cell_line.biomaterial_core.biomaterial_id'
-        )
-        # Filter out rows with invalid starting values
-        mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(invalid_start_values)).all(axis=1)
-        df_filtered = df[mask]
-        # Check for a unique value in 'cell_line.derived_cell_line_accession'
+        # The first column (mandatory column)
+        first_col_name = df.columns[0]
+        # Filter rows where the first column (biomaterial_id) is not null
+        df_filtered = df[df[first_col_name].notna()]
+        # Check if the derived_col exists and has a single unique value across rows
         derived_col = 'clonal_cell_line.parental_cell_line_name'
+        parent_cell_line_names = []
 
         if derived_col in df_filtered.columns:
             parent_cell_line_names = df_filtered[derived_col].dropna().unique()
@@ -691,44 +696,29 @@ class SpreadsheetSubmitter:
             if len(parent_cell_line_names) != 1:
                 errors.append(
                     f"The column '{derived_col}' must have the same value across all rows. Found values: {parent_cell_line_names}")
+                return [], df, None
 
-                return [], df
-
-        # Process rows to create CellLine objects
+        # Define a list to hold CellLine objects
         cell_lines = []
 
+        # Process rows to create CellLine objects
         for _, row in df_filtered.iterrows():
-            label = row['clonal_cell_line.label']
-            parental_cell_line_name = row.get('clonal_cell_line.parental_cell_line_name')
-            cell_type = row.get('clonal_cell_line.type')
-            expression_alteration_id = row.get('expression_alteration.label')
+            # The first column value is treated as the biomaterial_id
+            biomaterial_id = row[first_col_name]
 
-            # Error handling for missing mandatory fields
-            if pd.isnull(label):
-                errors.append("Biomaterial ID cannot be null in any row of the Cell line/ Clonal cell line sheet.")
+            # Create a dictionary for the remaining columns (dynamic key-value pairs)
+            column_data = {col: row[col] for col in df.columns if col != first_col_name and pd.notnull(row[col])}
 
-            if any(pd.isnull(field) for field in [parental_cell_line_name, cell_type]):
-                errors.append(
-                    f"Mandatory fields (parental_cell_line_name, clonal_cell_line.type, expression_alteration.label) are required for Cell "
-                    f"line/ Clonal cell line entity: {label}")
-
-            cell_lines.append(
-                CellLine(
-                    biomaterial_id=label,
-                    description=row.get('clonal_cell_line.description'),
-                    parental_cell_line_name=parental_cell_line_name,
-                    clone_id=row.get('clonal_cell_line.clone_id'),
-                    protocol_id=row.get('clonal_cell_line.cell_line_generation_protocol'),
-                    zygosity=row.get('clonal_cell_line.zygosity'),
-                    cell_type=cell_type,
-                    expression_alteration_id=expression_alteration_id,
-                    wt_control_status=row.get('clonal_cell_line.wt_control_status'),
-                    treatment_condition=row.get('clonal_cell_line.treatment_condition'),
-                    id=row.get('Id')
-                )
+            # Create the CellLine object
+            cell_line_obj = CellLine(
+                biomaterial_id=biomaterial_id,
+                column_data=column_data,
+                id=row.get('Id')  # Optional id column if available
             )
 
-        return cell_lines, df_filtered, parent_cell_line_names[0]
+            cell_lines.append(cell_line_obj)
+
+        return cell_lines, df_filtered, parent_cell_line_names[0] if parent_cell_line_names else None
 
     def parse_differentiated_cell_lines(self,
                                         sheet_name,

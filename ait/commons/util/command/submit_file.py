@@ -73,7 +73,7 @@ def _create_expression_alterations(submission_instance,
 
 
 class CmdSubmitFile:
-    BASE_URL = 'https://api.ingest.dev.archive.morphic.bio/'
+    BASE_URL = 'https://api.ingest.archive.morphic.bio/'
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
@@ -427,18 +427,18 @@ class CmdSubmitFile:
                 "undifferentiated_cell_line_sheet_name": undifferentiated_cell_line_sheet_name
             }
         except Exception as e:
+            print(f"Exception occurred:", e)
+            
             self.validation_errors.append(f"Spreadsheet is invalid {self.file}")
             return None
 
     def _validate_and_upload(self, parsed_data, list_of_files_in_upload_area):
-        """
         # Validate the parsed data and upload the file.
         validate_sequencing_files(parsed_data['sequencing_files'], list_of_files_in_upload_area, self.dataset,
                                   self.validation_errors)
         """
-        """
            Handle validation errors, including interacting with the user in case of a missing sheet.
-           """
+        """
         try:
             # Exit now if there are validation errors in the spreadsheet
             if self.validation_errors:

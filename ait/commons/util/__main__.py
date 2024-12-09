@@ -113,7 +113,8 @@ def parse_args(args):
     # parser_clear.add_argument('-a', action='store_true', help='clear all - selection and known dirs')
 
     parser_list = cmd_parser.add_parser('list', help='list contents of the area')
-    parser_list.add_argument('-b', action='store_true', help='list all areas in the S3 bucket (authorised users only)')
+    parser_list.add_argument('-processing', action='store_true', help='access the processed data (authorised users '
+                                                                      'only)')
 
     # parser_upload = cmd_parser.add_parser('upload', help='upload files to the area')
     # group_upload = parser_upload.add_mutually_exclusive_group(required=True)
@@ -143,7 +144,8 @@ def parse_args(args):
     group_delete.add_argument('-d', action='store_true', help='delete upload area and contents (authorised users only)')
 
     parser_sync = cmd_parser.add_parser('sync',
-                                        help='copy data from selected upload area to ingest upload area (authorised users only)')
+                                        help='copy data from selected upload area to ingest upload area (authorised '
+                                             'users only)')
     parser_sync.add_argument('INGEST_UPLOAD_AREA', help='Ingest upload area', type=valid_ingest_upload_area)
 
     ps = [parser]

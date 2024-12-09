@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from ait.commons.util.spreadsheet_util import SubmissionError
 from ait.commons.util.user_profile import get_profile
-from ait.commons.util.provider_api_util import APIProvider
+from ait.commons.util.provider_api_util import ProviderApi
 
 
 def matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
@@ -206,7 +206,7 @@ class CmdSubmit:
         self.access_token = get_profile('morphic-util').access_token
         self.type = getattr(self.args, 'type', None)
         self.file = getattr(self.args, 'file', None)
-        self.provider_api = APIProvider(self.BASE_URL)
+        self.provider_api = ProviderApi(self.BASE_URL)
 
     def run(self):
         """
@@ -1282,5 +1282,5 @@ class CmdSubmit:
             print(f"Deleting {data_file}")
             self.provider_api.delete(f"{self.BASE_URL}/files/{data_file}", access_token)
 
-        print(f"\nDeleting the dataset: {dataset}")
-        self.provider_api.delete(f"{self.BASE_URL}/datasets/{dataset}", access_token)
+        # print(f"\nDeleting the dataset: {dataset}")
+        # self.provider_api.delete(f"{self.BASE_URL}/datasets/{dataset}", access_token)

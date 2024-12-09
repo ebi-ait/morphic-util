@@ -1,5 +1,10 @@
+import hashlib
+import csv
+
 from ait.commons.util.common import format_err
 from ait.commons.util.local_state import get_selected_area
+from ait.commons.util.user_profile import get_profile
+from urllib.parse import urlparse
 
 
 def print_area(k, area):
@@ -20,6 +25,34 @@ def print_area(k, area):
     print()
 
 
+def get_s3_path():
+    while True:
+        s3_path = input("Enter the S3 path (e.g., s3://bucket-name/folder/): ").strip()
+        parsed_url = urlparse(s3_path)
+
+        if parsed_url.scheme == 's3' and parsed_url.netloc:
+            return s3_path
+        else:
+            print("Invalid S3 path. Please enter a valid S3 path starting with 's3://'.")
+
+
+def calculate_md5(s3_client, bucket_name, key):
+    md5_hash = hashlib.md5()
+
+    try:
+        # Stream the object in chunks
+        response = s3_client.get_object(Bucket=bucket_name, Key=key)
+
+        for chunk in response['Body'].iter_chunks(chunk_size=8192):
+            md5_hash.update(chunk)
+
+        return md5_hash.hexdigest()
+    except Exception as e:
+        print(f"Failed to compute MD5 for {key}: {e}")
+
+        return None
+
+
 class CmdList:
     """
     admin and user
@@ -29,22 +62,67 @@ class CmdList:
     def __init__(self, aws, args):
         self.aws = aws
         self.args = args
+        self.user = get_profile('morphic-util').username
+        self.processing = getattr(self.args, 'processing', None)
 
         self.s3_cli = self.aws.common_session.client('s3')
 
     def run(self):
-        selected_area = get_selected_area()  # select area is a S3 bucket
+        if self.processing:
+            if self.user != 'morphic-admin':
+                return False, "Admin function only"
+            else:
+                print("Access granted")
 
-        if not selected_area:
-            return False, 'No area selected'
+                s3_path = get_s3_path()
+                self.list_s3_files(s3_path)
 
-        try:
-            self.list_bucket_contents(selected_area)
-            # print_count(folder_count + files_count)
-            return True, None
+                return True, None
 
-        except Exception as e:
-            return False, format_err(e, 'list')
+        else:
+            selected_area = get_selected_area()  # select area is a S3 bucket
+
+            if not selected_area:
+                return False, 'No area selected'
+
+            try:
+                self.list_bucket_contents(selected_area)
+                # print_count(folder_count + files_count)
+                return True, None
+
+            except Exception as e:
+                return False, format_err(e, 'list')
+
+    def list_s3_files(self, s3_path):
+        parsed_url = urlparse(s3_path)
+        bucket_name = parsed_url.netloc
+        prefix = parsed_url.path.lstrip('/')
+        output_file = 's3_file_md5s.tsv'
+
+        with open(output_file, 'w', newline='') as csvfile:
+            tsv_writer = csv.writer(csvfile, delimiter=',')
+            tsv_writer.writerow(['File Name', 'MD5 Hash'])  # Write header row
+
+            try:
+                response = self.s3_cli.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+
+                if 'Contents' in response:
+                    print(f"\nFiles in '{s3_path}'")
+
+                    for obj in response['Contents']:
+                        file_key = obj['Key']
+                        if not file_key.endswith('/'):  # Skip folders
+                            md5_hash = calculate_md5(self.s3_cli, bucket_name, file_key)
+
+                            if md5_hash:
+                                print(f"{file_key} - MD5: {md5_hash}")
+                                tsv_writer.writerow([file_key, md5_hash])  # Write to file
+                else:
+                    print("\nNo files found.")
+            except Exception as e:
+                print(f"\nError: {e}")
+
+        print(f"\nResults saved to {output_file}")
 
     def list_bucket_contents(self, selected_area, prefix=''):
         result = self.s3_cli.list_objects_v2(Bucket=selected_area, Delimiter='/', Prefix=prefix)

@@ -10,7 +10,7 @@ from ait.commons.util.command.list import CmdList
 from ait.commons.util.command.submit import CmdSubmit, get_entity_id_from_hal_link, create_new_submission_envelope
 from ait.commons.util.command.upload import CmdUpload
 from ait.commons.util.user_profile import get_profile
-from ait.commons.util.provider_api_util import APIProvider
+from ait.commons.util.provider_api_util import ProviderApi
 from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter, ValidationError, \
     merge_library_preparation_sequencing_file, merge_cell_line_and_differentiated_cell_line, \
     merge_differentiated_cell_line_and_library_preparation, SubmissionError
@@ -88,7 +88,7 @@ class CmdSubmitFile:
         self.user_profile = get_profile('morphic-util')
         self.access_token = self.user_profile.access_token
         self.aws = Aws(self.user_profile)
-        self.provider_api = APIProvider(self.BASE_URL)
+        self.provider_api = ProviderApi(self.BASE_URL)
         self.validation_errors = []
         self.submission_errors = []
         self.submission_envelope_id = None

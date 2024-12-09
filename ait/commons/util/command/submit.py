@@ -1282,5 +1282,5 @@ class CmdSubmit:
             print(f"Deleting {data_file}")
             self.provider_api.delete(f"{self.BASE_URL}/files/{data_file}", access_token)
 
-        print(f"\nDeleting the dataset: {dataset}")
-        self.provider_api.delete(f"{self.BASE_URL}/datasets/{dataset}", access_token)
+        # print(f"\nDeleting the dataset: {dataset}")
+        # self.provider_api.delete(f"{self.BASE_URL}/datasets/{dataset}", access_token)

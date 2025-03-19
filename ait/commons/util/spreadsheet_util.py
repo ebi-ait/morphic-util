@@ -184,6 +184,7 @@ class DifferentiatedCellLine:
                  description,
                  cell_line_biomaterial_id,  # Maps to 'clonal_cell_line_label'
                  differentiated_product_protocol_id,
+                 undifferentiated_product_protocol_id,
                  terminally_differentiated,
                  model_system,
                  timepoint_value,
@@ -195,6 +196,7 @@ class DifferentiatedCellLine:
         self.description = description
         self.cell_line_biomaterial_id = cell_line_biomaterial_id  # Maps to 'clonal_cell_line_label'
         self.differentiated_product_protocol_id = differentiated_product_protocol_id
+        self.undifferentiated_product_protocol_id = undifferentiated_product_protocol_id
         self.terminally_differentiated = terminally_differentiated
         self.model_system = model_system
         self.timepoint_value = timepoint_value
@@ -216,6 +218,7 @@ class DifferentiatedCellLine:
             "description": self.description,
             "clonal_cell_line_id": self.cell_line_biomaterial_id,
             "differentiated_product_protocol_id": self.differentiated_product_protocol_id,
+            "undifferentiated_product_protocol_id": self.undifferentiated_product_protocol_id,
             "terminally_differentiated": self.terminally_differentiated,
             "model_system": self.model_system,
             "timepoint_value": self.timepoint_value,
@@ -517,30 +520,33 @@ def merge_cell_line_and_differentiated_cell_line(cell_lines,
         If a differentiated cell line does not have a corresponding cell line.
     """
 
-    find_orphans(
-        source_entities=cell_lines,
-        target_entities=differentiated_cell_lines,
-        source_attr="biomaterial_id",
-        target_attr="cell_line_biomaterial_id",
-        source_type="Cell line",
-        target_type="Differentiated Cell line",
-        errors=errors
-    )
+    try:
+        find_orphans(
+            source_entities=cell_lines,
+            target_entities=differentiated_cell_lines,
+            source_attr="biomaterial_id",
+            target_attr="cell_line_biomaterial_id",
+            source_type="Cell line",
+            target_type="Differentiated Cell line",
+            errors=errors
+        )
 
-    missing_parent_entity_error = MissingParentEntityError()
-    cell_line_ids = {cell_line.biomaterial_id for cell_line in cell_lines}
+        missing_parent_entity_error = MissingParentEntityError()
+        cell_line_ids = {cell_line.biomaterial_id for cell_line in cell_lines}
 
-    for differentiated_cell_line in differentiated_cell_lines:
-        if differentiated_cell_line.cell_line_biomaterial_id not in cell_line_ids:
-            missing_parent_entity_error.add_error("Cell Line",
-                                                  "Differentiated Cell line",
-                                                  differentiated_cell_line.label,
-                                                  errors)
-
-    for cell_line in cell_lines:
         for differentiated_cell_line in differentiated_cell_lines:
-            if differentiated_cell_line.cell_line_biomaterial_id == cell_line.biomaterial_id:
-                cell_line.add_differentiated_cell_line(differentiated_cell_line)
+            if differentiated_cell_line.cell_line_biomaterial_id not in cell_line_ids:
+                missing_parent_entity_error.add_error("Cell Line",
+                                                      "Differentiated Cell line",
+                                                      differentiated_cell_line.biomaterial_id,
+                                                      errors)
+
+        for cell_line in cell_lines:
+            for differentiated_cell_line in differentiated_cell_lines:
+                if differentiated_cell_line.cell_line_biomaterial_id == cell_line.biomaterial_id:
+                    cell_line.add_differentiated_cell_line(differentiated_cell_line)
+    except Exception as e:
+        print(f"Exception occurred here:", e)
 
 
 class SpreadsheetSubmitter:
@@ -688,11 +694,13 @@ class SpreadsheetSubmitter:
         if derived_col in df_filtered.columns:
             parent_cell_line_names = df_filtered[derived_col].dropna().unique()
 
+        """
             if len(parent_cell_line_names) != 1:
                 errors.append(
                     f"The column '{derived_col}' must have the same value across all rows. Found values: {parent_cell_line_names}")
 
                 return [], df
+        """
 
         # Process rows to create CellLine objects
         cell_lines = []
@@ -728,7 +736,7 @@ class SpreadsheetSubmitter:
                 )
             )
 
-        return cell_lines, df_filtered, parent_cell_line_names[0]
+        return cell_lines, df_filtered, parent_cell_line_names
 
     def parse_differentiated_cell_lines(self,
                                         sheet_name,
@@ -798,10 +806,11 @@ class SpreadsheetSubmitter:
             differentiated_cell_lines.append(
                 DifferentiatedCellLine(
                     biomaterial_id=label,
-                    description=row.get('differentiated_product.biomaterial_core.biomaterial_description'),
+                    description=row.get('differentiated_product.description'),
                     cell_line_biomaterial_id=parent_biomaterial_id,
                     differentiated_product_protocol_id=row.get(
                         'differentiated_product.differentiated_product_protocol_id'),
+                    undifferentiated_product_protocol_id=None,
                     treatment_condition=row.get('differentiated_product.treatment_condition'),
                     wt_control_status=row.get('differentiated_product.wt_control_status'),
                     timepoint_value=row.get('differentiated_product.timepoint_value'),
@@ -841,16 +850,16 @@ class SpreadsheetSubmitter:
         # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
         # Check if the required column exists
-        if 'differentiated_product.label' not in df.columns:
-            errors.append(f"The column 'differentiated_product.label' does not "
+        if 'undifferentiated_product.label' not in df.columns:
+            errors.append(f"The column 'undifferentiated_product.label' does not "
                           f"exist in {sheet_name} name. The rest of the file will not be processed")
             return [], df
 
         # Filter rows where biomaterial_id is not null
-        df = df[df['differentiated_product.label'].notna()]
+        df = df[df['undifferentiated_product.label'].notna()]
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
         # Define columns to check for values starting with 'ABC' or 'XYZ'
-        cols_to_check = ['differentiated_product.label']
+        cols_to_check = ['undifferentiated_product.label']
         # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
             ('FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
@@ -861,18 +870,19 @@ class SpreadsheetSubmitter:
         undifferentiated_cell_lines = []
 
         for _, row in df_filtered.iterrows():
-            label = row['differentiated_product.label']
-            parent_biomaterial_id = row.get('differentiated_product.differentiated_product_protocol_id')
+            label = row['undifferentiated_product.label']
+            parent_biomaterial_id = row.get('clonal_cell_line.label')
 
             # Check if biomaterial_id is null
             if pd.isnull(label):
-                errors.append("Differentiated Cell line ID cannot be null in any row of the Differentiated Cell line "
-                              "sheet.")
+                errors.append(
+                    "Undifferentiated Cell line ID cannot be null in any row of the Undifferentiated Cell line "
+                    "sheet.")
                 # raise MissingMandatoryFieldError("Differentiated Cell line ID cannot be null in any row.")
 
             # Check if derived_accession and cell_type are present
             if pd.isnull(parent_biomaterial_id):
-                errors.append(f"Input Cell line ID cannot be null for Differentiated Cell line:  "
+                errors.append(f"Input Cell line ID cannot be null for Undifferentiated Cell line:  "
                               f"{label}")
                 """
                 raise MissingMandatoryFieldError(
@@ -883,16 +893,17 @@ class SpreadsheetSubmitter:
             undifferentiated_cell_lines.append(
                 DifferentiatedCellLine(
                     biomaterial_id=label,
-                    description=row.get('differentiated_product.biomaterial_core.biomaterial_description'),
+                    description=row.get('undifferentiated_product.description'),
                     cell_line_biomaterial_id=parent_biomaterial_id,
-                    differentiated_product_protocol_id=row.get(
-                        'differentiated_product.differentiated_product_protocol_id'),
-                    treatment_condition=row.get('differentiated_product.treatment_condition'),
-                    wt_control_status=row.get('differentiated_product.wt_control_status'),
-                    timepoint_value=row.get('differentiated_product.timepoint_value'),
-                    timepoint_unit=row.get('differentiated_product.timepoint_unit'),
-                    terminally_differentiated=row.get('differentiated_product.terminally_differentiated'),
-                    model_system=row.get('differentiated_product.model_system'),
+                    differentiated_product_protocol_id=None,
+                    undifferentiated_product_protocol_id=row.get(
+                        'undifferentiated_product.undifferentiated_product_protocol_id'),
+                    treatment_condition=row.get('undifferentiated_product.treatment_condition'),
+                    wt_control_status=row.get('undifferentiated_product.wt_control_status'),
+                    timepoint_value=row.get('undifferentiated_product.timepoint_value'),
+                    timepoint_unit=row.get('undifferentiated_product.timepoint_unit'),
+                    terminally_differentiated=row.get('undifferentiated_product.terminally_differentiated'),
+                    model_system=row.get('undifferentiated_product.model_system'),
                     id=row.get('Id')
                 )
             )
@@ -901,6 +912,7 @@ class SpreadsheetSubmitter:
 
     def parse_library_preparations(self,
                                    sheet_name,
+                                   differentiated,
                                    action,
                                    errors):
         """
@@ -925,15 +937,28 @@ class SpreadsheetSubmitter:
         required_columns = [
             'library_preparation.label',
             'differentiated_product.label',
+            'undifferentiated_product.label',
             'library_preparation.library_preparation_protocol_id'
         ]
 
         for col in required_columns:
             if col not in df.columns:
-                errors.append(f"The column '{col}' does not exist in the {sheet_name} sheet. "
-                              f"The rest of the file will not be processed")
+                if col == 'differentiated_product.label' and differentiated:
+                    errors.append(f"The column '{col}' does not exist in the {sheet_name} sheet. "
+                                  f"The rest of the file will not be processed")
 
-                return [], df
+                    return [], df
+                elif col == 'undifferentiated_product.label' and not differentiated:
+                    errors.append(f"The column '{col}' does not exist in the {sheet_name} sheet. "
+                                  f"The rest of the file will not be processed")
+
+                    return [], df
+                else:
+                    if col not in ('differentiated_product.label', 'undifferentiated_product.label'):
+                        errors.append(f"The column '{col}' does not exist in the {sheet_name} sheet. "
+                                      f"The rest of the file will not be processed")
+
+                        return [], df
 
         # Filter rows where biomaterial_id is not null
         df = df[df['library_preparation.label'].notna()]
@@ -951,7 +976,10 @@ class SpreadsheetSubmitter:
 
         for _, row in df_filtered.iterrows():
             label = row['library_preparation.label']
-            differentiated_biomaterial_label = row.get('differentiated_product.label')
+            if differentiated:
+                differentiated_biomaterial_label = row.get('differentiated_product.label')
+            else:
+                differentiated_biomaterial_label = row.get('undifferentiated_product.label')
             library_preparation_protocol_id = row.get('library_preparation.library_preparation_protocol_id')
 
             # Check if required fields are null
@@ -959,8 +987,14 @@ class SpreadsheetSubmitter:
                 errors.append("Library Preparation ID cannot be null in any row of the Library Preparation sheet.")
                 # raise MissingMandatoryFieldError("Library Preparation ID cannot be null in any row.")
             if pd.isnull(differentiated_biomaterial_label):
-                errors.append("Differentiated Cell Line ID cannot be null in any row of the Library Preparation sheet.")
-                # raise MissingMandatoryFieldError("Differentiated Cell Line ID cannot be null in any row.")
+                if differentiated:
+                    errors.append(
+                        "Differentiated Cell Line ID cannot be null in any row of the Library Preparation sheet.")
+                    # raise MissingMandatoryFieldError("Differentiated Cell Line ID cannot be null in any row.")
+                else:
+                    errors.append(
+                        "Undifferentiated Cell Line ID cannot be null in any row of the Library Preparation sheet.")
+                    # raise MissingMandatoryFieldError("Differentiated Cell Line ID cannot be null in any row.")
             if pd.isnull(library_preparation_protocol_id):
                 errors.append(
                     "Library Preparation Protocol ID cannot be null in any row of the Library Preparation sheet.")
@@ -1177,8 +1211,8 @@ class SpreadsheetSubmitter:
         list
             A list of CellLine objects parsed from the specified sheet.
         """
-        cell_lines, cell_lines_df, parent_cell_line_name = self.parse_cell_lines(sheet_name, action, errors)
-        return cell_lines, cell_lines_df, parent_cell_line_name
+        cell_lines, cell_lines_df, parent_cell_line_names = self.parse_cell_lines(sheet_name, action, errors)
+        return cell_lines, cell_lines_df, parent_cell_line_names
 
     def get_differentiated_cell_lines(self,
                                       sheet_name,
@@ -1229,6 +1263,7 @@ class SpreadsheetSubmitter:
 
     def get_library_preparations(self,
                                  sheet_name,
+                                 differentiated,
                                  action,
                                  errors):
         """
@@ -1246,7 +1281,7 @@ class SpreadsheetSubmitter:
         list
             A list of LibraryPreparation objects parsed from the specified sheet.
         """
-        library_preparations, df_filtered = self.parse_library_preparations(sheet_name,
+        library_preparations, df_filtered = self.parse_library_preparations(sheet_name, differentiated,
                                                                             action, errors)
         return library_preparations, df_filtered
 

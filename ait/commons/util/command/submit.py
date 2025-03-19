@@ -323,6 +323,7 @@ class CmdSubmit:
                                         cell_line_entity_id,
                                         differentiated_cell_line,
                                         differentiated_cell_lines_df,
+                                        differentiated,
                                         submission_envelope_id,
                                         dataset_id,
                                         access_token,
@@ -350,9 +351,15 @@ class CmdSubmit:
                     print(f"Updated differentiated cell line: {differentiated_cell_line.id} / "
                           f"{differentiated_cell_line.biomaterial_id}")
 
-                    update_dataframe(differentiated_cell_lines_df, differentiated_cell_line.id,
-                                     differentiated_cell_line.biomaterial_id,
-                                     'differentiated_product.label')
+                    if differentiated:
+                        update_dataframe(differentiated_cell_lines_df, differentiated_cell_line.id,
+                                         differentiated_cell_line.biomaterial_id,
+                                         'differentiated_product.label')
+                    else:
+                        update_dataframe(differentiated_cell_lines_df, differentiated_cell_line.id,
+                                         differentiated_cell_line.biomaterial_id,
+                                         'undifferentiated_product.label')
+
                     return differentiated_cell_line.id
                 else:
                     errors.append(f"Failed to update differentiated cell line: {differentiated_cell_line.id} / "
@@ -370,12 +377,19 @@ class CmdSubmit:
                                                                                           dataset_id,
                                                                                           differentiated_cell_line,
                                                                                           submission_envelope_id)
-                update_dataframe(differentiated_cell_lines_df, differentiated_cell_line_id,
-                                 differentiated_cell_line.biomaterial_id,
-                                 'differentiated_product.label')
+
+                if differentiated:
+                    update_dataframe(differentiated_cell_lines_df, differentiated_cell_line_id,
+                                     differentiated_cell_line.biomaterial_id,
+                                     'differentiated_product.label')
+                else:
+                    update_dataframe(differentiated_cell_lines_df, differentiated_cell_line_id,
+                                     differentiated_cell_line.biomaterial_id,
+                                     'undifferentiated_product.label')
                 return differentiated_cell_line_id
             except Exception as e:
-                errors.append(f"Failed to create differentiated cell line: {differentiated_cell_line.biomaterial_id}")
+                errors.append(
+                    f"Failed to create differentiated/undifferentiated cell line: {differentiated_cell_line.biomaterial_id}")
                 raise SubmissionError(errors, e)
 
     def create_differentiated_cell_line_entity(self,

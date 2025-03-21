@@ -73,7 +73,7 @@ def _create_expression_alterations(submission_instance,
 
 
 class CmdSubmitFile:
-    BASE_URL = 'https://api.ingest.archive.morphic.bio/'
+    BASE_URL = 'https://api.ingest.dev.archive.morphic.bio/'
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
@@ -387,9 +387,19 @@ class CmdSubmitFile:
                 merge_cell_line_and_differentiated_cell_line(cell_lines, undifferentiated_cell_lines,
                                                              self.validation_errors)
 
-            library_preparations, library_preparations_df = parser.get_library_preparations(
-                'Library preparation', differentiated, self.action, self.validation_errors
-            )
+            library_preparations_result = parser.get_library_preparations(
+                'Library preparation', differentiated, self.action, self.validation_errors)
+
+            if not isinstance(library_preparations_result, tuple) or len(library_preparations_result) != 2:
+                raise ValueError("Unexpected return from get_library_preparations()")
+
+            library_preparations, library_preparations_df = library_preparations_result
+
+            # Handle N:1 relationships for differentiated products in library preparation
+            for lp in library_preparations:
+                if "differentiated_biomaterial_id" in lp.__dict__:
+                    differentiated_ids = lp.differentiated_biomaterial_id.split("|")
+                    lp.differentiated_biomaterial_id = differentiated_ids
 
             if differentiated_cell_lines:
                 merge_differentiated_cell_line_and_library_preparation(

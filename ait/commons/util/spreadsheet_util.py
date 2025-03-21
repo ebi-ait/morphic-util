@@ -386,14 +386,23 @@ def find_orphans(source_entities,
     """
     for source_entity in source_entities:
         match_found = False
+        source_value = getattr(source_entity, source_attr)
 
         for target_entity in target_entities:
-            if getattr(target_entity, target_attr) == getattr(source_entity, source_attr):
-                match_found = True
-                break
+            target_value = getattr(target_entity, target_attr)
+
+            # Handle case where target_value is a list
+            if isinstance(target_value, list):
+                if source_value in target_value:
+                    match_found = True
+                    break
+            else:
+                if target_value == source_value:
+                    match_found = True
+                    break
 
         if not match_found:
-            errors.append(f"Orphaned entity {source_type} and ID is {getattr(source_entity, source_attr)}")
+            errors.append(f"Orphaned entity {source_type} and ID is {source_value}")
             # raise OrphanedEntityError(source_type, getattr(source_entity, source_attr))
 
     # print(f"VALIDATED: All {source_type.lower()}s have corresponding {target_type.lower()}s.")
@@ -459,6 +468,8 @@ def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_l
         A list of DifferentiatedCellLine objects to be merged.
     library_preparations : list
         A list of LibraryPreparation objects to be merged.
+    errors : list
+        A list to store errors encountered during merging.
 
     Returns:
     --------
@@ -470,30 +481,44 @@ def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_l
         If a library preparation does not have a corresponding differentiated cell line.
     """
 
+    # Step 1: Check if any orphaned library preparation exists (i.e., has no corresponding differentiated cell line)
     find_orphans(
         source_entities=differentiated_cell_lines,
         target_entities=library_preparations,
         source_attr="biomaterial_id",
         target_attr="differentiated_biomaterial_id",
-        source_type="Differentiated Cell line",
+        source_type="Differentiated Cell Line",
         target_type="Library Preparation",
         errors=errors
     )
 
     missing_parent_entity_error = MissingParentEntityError()
 
+    # Ensure differentiated IDs are strings for comparison
     differentiated_ids = {diff_cell.biomaterial_id for diff_cell in differentiated_cell_lines}
 
     for library_preparation in library_preparations:
-        if library_preparation.differentiated_biomaterial_id not in differentiated_ids:
-            missing_parent_entity_error.add_error("Differentiated Cell Line",
-                                                  "Library Preparation",
-                                                  library_preparation.biomaterial_id,
-                                                  errors)
+        diff_biomaterial_id = library_preparation.differentiated_biomaterial_id
 
+        if isinstance(diff_biomaterial_id, list):
+            # If it's a list, check if any of the IDs are missing
+            missing_ids = [id_ for id_ in diff_biomaterial_id if id_ not in differentiated_ids]
+            if missing_ids:
+                missing_parent_entity_error.add_error("Differentiated Cell Line", "Library Preparation", ", ".join(missing_ids), errors)
+        else:
+            # If it's a string, check directly
+            if diff_biomaterial_id not in differentiated_ids:
+                missing_parent_entity_error.add_error("Differentiated Cell Line", "Library Preparation", diff_biomaterial_id, errors)
+
+    # Step 2: Merge valid library preparations with their corresponding differentiated cell lines
     for differentiated_cell_line in differentiated_cell_lines:
         for library_preparation in library_preparations:
-            if library_preparation.differentiated_biomaterial_id == differentiated_cell_line.biomaterial_id:
+            diff_biomaterial_id = library_preparation.differentiated_biomaterial_id
+
+            if isinstance(diff_biomaterial_id, list):
+                if differentiated_cell_line.biomaterial_id in diff_biomaterial_id:
+                    differentiated_cell_line.add_library_preparation(library_preparation)
+            elif diff_biomaterial_id == differentiated_cell_line.biomaterial_id:
                 differentiated_cell_line.add_library_preparation(library_preparation)
 
 

@@ -191,7 +191,7 @@ class CmdSubmit:
         transform(file): Transforms the input file to a JSON object.
         put_to_provider_api(url, access_token): Sends a PUT request to the provider API.
     """
-    BASE_URL = 'https://api.ingest.archive.morphic.bio/'
+    BASE_URL = 'https://api.ingest.dev.archive.morphic.bio/'
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
@@ -951,18 +951,20 @@ class CmdSubmit:
                                                                          submission_envelope_id,
                                                                          action,
                                                                          errors)
+
             for differentiated_or_undifferentiated_cell_line in differentiated_or_undifferentiated_cell_lines:
                 for library_preparation in library_preparations:
-                    if (differentiated_or_undifferentiated_cell_line.biomaterial_id ==
-                            library_preparation.differentiated_biomaterial_id):
-                        self.link_differentiated_and_library_preparation(
-                            access_token,
-                            differentiated_or_undifferentiated_cell_line,
-                            library_preparation,
-                            dataset_id,
-                            submission_envelope_id,
-                            action,
-                            errors)
+                    if isinstance(library_preparation.differentiated_biomaterial_id, list):
+                        if differentiated_or_undifferentiated_cell_line.biomaterial_id in library_preparation.differentiated_biomaterial_id:
+                            self.link_differentiated_and_library_preparation(
+                                access_token,
+                                differentiated_or_undifferentiated_cell_line,
+                                library_preparation,
+                                dataset_id,
+                                submission_envelope_id,
+                                action,
+                                errors
+                            )
 
             for library_preparation in library_preparations:
                 for sequencing_file in sequencing_files:

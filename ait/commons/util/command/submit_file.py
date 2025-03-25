@@ -13,7 +13,7 @@ from ait.commons.util.user_profile import get_profile
 from ait.commons.util.provider_api_util import ProviderApi
 from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter, ValidationError, \
     merge_library_preparation_sequencing_file, merge_cell_line_and_differentiated_cell_line, \
-    merge_differentiated_cell_line_and_library_preparation, SubmissionError
+    merge_differentiated_cell_line_and_library_preparation, SubmissionError, process_library_preparations
 
 
 # Define a class for handling submission of a command file
@@ -401,15 +401,22 @@ class CmdSubmitFile:
                     differentiated_ids = lp.differentiated_biomaterial_id.split("|")
                     lp.differentiated_biomaterial_id = differentiated_ids
 
-            if differentiated_cell_lines:
-                merge_differentiated_cell_line_and_library_preparation(
-                    differentiated_cell_lines, library_preparations, self.validation_errors
-                )
+            # if differentiated_cell_lines:
+            #     merge_differentiated_cell_line_and_library_preparation(
+            #         differentiated_cell_lines, library_preparations, self.validation_errors, cell_lines=cell_lines
+            #     )
+            #
+            # if undifferentiated_cell_lines and not differentiated:
+            #     merge_differentiated_cell_line_and_library_preparation(
+            #         undifferentiated_cell_lines, library_preparations, self.validation_errors, cell_lines=cell_lines
+            #     )
 
-            if undifferentiated_cell_lines and not differentiated:
-                merge_differentiated_cell_line_and_library_preparation(
-                    undifferentiated_cell_lines, library_preparations, self.validation_errors
-                )
+            if differentiated_cell_lines:
+                # For UCSF differentiated datasets, use the parental cell lines (generated from the clonal sheet)
+                process_library_preparations(cell_lines, differentiated_cell_lines, library_preparations, self.validation_errors)
+            elif undifferentiated_cell_lines and not differentiated:
+                # For UCSF undifferentiated datasets, pass the undifferentiated cell lines
+                process_library_preparations(cell_lines, undifferentiated_cell_lines, library_preparations, self.validation_errors)
 
             sequencing_files, sequencing_files_df = parser.get_sequencing_files(
                 'Sequence file', self.action, self.validation_errors

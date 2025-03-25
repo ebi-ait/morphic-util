@@ -76,7 +76,8 @@ class CellLine:
                  treatment_condition,
                  wt_control_status,
                  expression_alteration_id,
-                 id):
+                 id,
+                 parental_only=False):
         self.biomaterial_id = biomaterial_id
         self.description = description
         self.parental_cell_line_name = parental_cell_line_name
@@ -89,6 +90,8 @@ class CellLine:
         self.differentiated_cell_lines = []
         self.expression_alteration_id = expression_alteration_id
         self.id = id
+        # New flag: if True, output minimal content (for parental cell lines with no alteration)
+        self.parental_only = parental_only
 
     def add_differentiated_cell_line(self, differentiated_cell_line):
         self.differentiated_cell_lines.append(differentiated_cell_line)
@@ -97,33 +100,26 @@ class CellLine:
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self):
-        content = {
-            "label": self.biomaterial_id,  # matches 'label' in schema
-            "description": self.description,  # matches 'description' in schema
-            "zygosity": self.zygosity,  # matches 'zygosity' in schema
-            "type": self.cell_type,  # matches 'type' in schema
-            "parental_cell_line_name": self.parental_cell_line_name  # matches 'parental_cell_line_name' in schema
-        }
-
-        # Optional fields - add them only if they are provided
-        if self.clone_id:
-            content["clone_id"] = self.clone_id  # matches 'clone_id' in schema
-
-        if self.protocol_id:
-            content[
-                "cell_line_generation_protocol"] = self.protocol_id  # matches 'cell_line_generation_protocol' in schema
-
-        if self.treatment_condition:
-            content[
-                "treatment_condition"] = self.treatment_condition  # matches 'cell_line_generation_protocol' in schema
-
-        if self.wt_control_status:
-            content[
-                "wt_control_status"] = self.wt_control_status  # matches 'cell_line_generation_protocol' in schema
-
-        return {
-            "content": content
-        }
+        if self.parental_only:
+            # Minimal content for a parental cell line not linked to an alteration protocol.
+            return {"content": self.biomaterial_id}
+        else:
+            content = {
+                "label": self.biomaterial_id,  # matches 'label' in schema
+                "description": self.description,
+                "zygosity": self.zygosity,
+                "type": self.cell_type,
+                "parental_cell_line_name": self.parental_cell_line_name
+            }
+            if self.clone_id:
+                content["clone_id"] = self.clone_id
+            if self.protocol_id:
+                content["cell_line_generation_protocol"] = self.protocol_id
+            if self.treatment_condition:
+                content["treatment_condition"] = self.treatment_condition
+            if self.wt_control_status:
+                content["wt_control_status"] = self.wt_control_status
+            return {"content": content}
 
 
 class ExpressionAlterationStrategy:
@@ -456,122 +452,184 @@ def merge_library_preparation_sequencing_file(library_preparations,
                 library_preparation.add_sequencing_file(sequencing_file)
 
 
-def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
-                                                           library_preparations,
-                                                           errors):
+def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines, library_preparations, errors, cell_lines=None):
     """
     Merges differentiated cell lines and library preparations based on their biomaterial IDs.
-
-    Parameters:
-    -----------
-    differentiated_cell_lines : list
-        A list of DifferentiatedCellLine objects to be merged.
-    library_preparations : list
-        A list of LibraryPreparation objects to be merged.
-    errors : list
-        A list to store errors encountered during merging.
-
-    Returns:
-    --------
-    None
-
-    Raises:
-    ------
-    MissingEntityError:
-        If a library preparation does not have a corresponding differentiated cell line.
+    An extra optional parameter 'cell_lines' is accepted to avoid unexpected keyword argument errors.
     """
+    try:
+        find_orphans(
+            source_entities=differentiated_cell_lines,
+            target_entities=library_preparations,
+            source_attr="biomaterial_id",
+            target_attr="differentiated_biomaterial_id",
+            source_type="Differentiated Cell Line",
+            target_type="Library Preparation",
+            errors=errors
+        )
 
-    # Step 1: Check if any orphaned library preparation exists (i.e., has no corresponding differentiated cell line)
-    find_orphans(
-        source_entities=differentiated_cell_lines,
-        target_entities=library_preparations,
-        source_attr="biomaterial_id",
-        target_attr="differentiated_biomaterial_id",
-        source_type="Differentiated Cell Line",
-        target_type="Library Preparation",
-        errors=errors
-    )
-
-    missing_parent_entity_error = MissingParentEntityError()
-
-    # Ensure differentiated IDs are strings for comparison
-    differentiated_ids = {diff_cell.biomaterial_id for diff_cell in differentiated_cell_lines}
-
-    for library_preparation in library_preparations:
-        diff_biomaterial_id = library_preparation.differentiated_biomaterial_id
-
-        if isinstance(diff_biomaterial_id, list):
-            # If it's a list, check if any of the IDs are missing
-            missing_ids = [id_ for id_ in diff_biomaterial_id if id_ not in differentiated_ids]
-            if missing_ids:
-                missing_parent_entity_error.add_error("Differentiated Cell Line", "Library Preparation", ", ".join(missing_ids), errors)
-        else:
-            # If it's a string, check directly
-            if diff_biomaterial_id not in differentiated_ids:
-                missing_parent_entity_error.add_error("Differentiated Cell Line", "Library Preparation", diff_biomaterial_id, errors)
-
-    # Step 2: Merge valid library preparations with their corresponding differentiated cell lines
-    for differentiated_cell_line in differentiated_cell_lines:
+        missing_parent_entity_error = MissingParentEntityError()
+        differentiated_ids = {diff_cell.biomaterial_id for diff_cell in differentiated_cell_lines}
         for library_preparation in library_preparations:
             diff_biomaterial_id = library_preparation.differentiated_biomaterial_id
-
             if isinstance(diff_biomaterial_id, list):
-                if differentiated_cell_line.biomaterial_id in diff_biomaterial_id:
-                    differentiated_cell_line.add_library_preparation(library_preparation)
-            elif diff_biomaterial_id == differentiated_cell_line.biomaterial_id:
-                differentiated_cell_line.add_library_preparation(library_preparation)
+                missing_ids = [id_ for id_ in diff_biomaterial_id if id_ not in differentiated_ids]
+                if missing_ids:
+                    missing_parent_entity_error.add_error("Differentiated Cell Line", "Library Preparation", ", ".join(missing_ids), errors)
+            else:
+                if diff_biomaterial_id not in differentiated_ids:
+                    missing_parent_entity_error.add_error("Differentiated Cell Line", "Library Preparation", diff_biomaterial_id, errors)
+
+        for diff_cell in differentiated_cell_lines:
+            for library_preparation in library_preparations:
+                diff_biomaterial_id = library_preparation.differentiated_biomaterial_id
+                if isinstance(diff_biomaterial_id, list):
+                    if diff_cell.biomaterial_id in diff_biomaterial_id:
+                        diff_cell.add_library_preparation(library_preparation)
+                elif diff_biomaterial_id == diff_cell.biomaterial_id:
+                    diff_cell.add_library_preparation(library_preparation)
+    except Exception as e:
+        print(f"Exception occurred during merging of differentiated cell lines and library preparations: {e}")
 
 
-def merge_cell_line_and_differentiated_cell_line(cell_lines,
-                                                 differentiated_cell_lines,
-                                                 errors):
+def merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines, errors):
     """
     Merges cell lines and differentiated cell lines based on their biomaterial IDs.
 
-    Parameters:
-    -----------
-    cell_lines : list
-        A list of CellLine objects to be merged.
-    differentiated_cell_lines : list
-        A list of DifferentiatedCellLine objects to be merged.
-
-    Returns:
-    --------
-    None
-
-    Raises:
-    ------
-    MissingEntityError:
-        If a differentiated cell line does not have a corresponding cell line.
+    Only parental cell lines (those without a clone_id, or auto-generated as parents) are used
+    for linking to differentiated products. This ensures that clones (which go directly to library preparation)
+    are not forced to be the parent of differentiated products.
     """
+    # Filter to include only parental cell lines.
+    parental_cell_lines = [cl for cl in cell_lines if cl.clone_id is None]
 
     try:
         find_orphans(
-            source_entities=cell_lines,
+            source_entities=parental_cell_lines,
             target_entities=differentiated_cell_lines,
             source_attr="biomaterial_id",
             target_attr="cell_line_biomaterial_id",
-            source_type="Cell line",
+            source_type="Cell line (Parental)",
             target_type="Differentiated Cell line",
             errors=errors
         )
 
         missing_parent_entity_error = MissingParentEntityError()
-        cell_line_ids = {cell_line.biomaterial_id for cell_line in cell_lines}
+        parental_ids = {cl.biomaterial_id for cl in parental_cell_lines}
+        for diff_cell in differentiated_cell_lines:
+            if diff_cell.cell_line_biomaterial_id not in parental_ids:
+                missing_parent_entity_error.add_error("Cell Line", "Differentiated Cell line", diff_cell.cell_line_biomaterial_id, errors)
 
-        for differentiated_cell_line in differentiated_cell_lines:
-            if differentiated_cell_line.cell_line_biomaterial_id not in cell_line_ids:
-                missing_parent_entity_error.add_error("Cell Line",
-                                                      "Differentiated Cell line",
-                                                      differentiated_cell_line.biomaterial_id,
-                                                      errors)
-
-        for cell_line in cell_lines:
-            for differentiated_cell_line in differentiated_cell_lines:
-                if differentiated_cell_line.cell_line_biomaterial_id == cell_line.biomaterial_id:
-                    cell_line.add_differentiated_cell_line(differentiated_cell_line)
+        for cl in parental_cell_lines:
+            for diff_cell in differentiated_cell_lines:
+                if diff_cell.cell_line_biomaterial_id == cl.biomaterial_id:
+                    cl.add_differentiated_cell_line(diff_cell)
     except Exception as e:
-        print(f"Exception occurred here:", e)
+        print(f"Exception occurred during merging: {e}")
+
+def target_in_ids(target, id_set):
+    """
+    Returns True if the target (which may be a string or a list of strings)
+    has any element in id_set.
+    """
+    if isinstance(target, list):
+        return any(item in id_set for item in target)
+    else:
+        return target in id_set
+
+
+def merge_differentiated_cell_line_and_library_preparation_for_lp(differentiated_cell_lines, library_preps, errors, cell_lines=None):
+    """
+    Merges library preparations with differentiated cell lines.
+    Only processes library preparations whose differentiated_biomaterial_id is found in differentiated_cell_lines.
+    """
+    # Create a set of differentiated cell line IDs (these should be strings)
+    diff_ids = {d.biomaterial_id for d in differentiated_cell_lines}
+    # Use target_in_ids() to allow lp.differentiated_biomaterial_id to be a list or a string.
+    library_preps_for_diff = [lp for lp in library_preps if target_in_ids(lp.differentiated_biomaterial_id, diff_ids)]
+
+    if not library_preps_for_diff:
+        return  # Nothing to merge for differentiated cell lines
+
+    try:
+        find_orphans(
+            source_entities=differentiated_cell_lines,
+            target_entities=library_preps_for_diff,
+            source_attr="biomaterial_id",
+            target_attr="differentiated_biomaterial_id",
+            source_type="Differentiated Cell Line",
+            target_type="Library Preparation",
+            errors=errors
+        )
+
+        missing_parent_entity_error = MissingParentEntityError()
+        for lp in library_preps_for_diff:
+            # We check using the helper to avoid errors if lp.differentiated_biomaterial_id is a list.
+            if not target_in_ids(lp.differentiated_biomaterial_id, diff_ids):
+                missing_parent_entity_error.add_error("Differentiated Cell Line", "Library Preparation", str(lp.differentiated_biomaterial_id), errors)
+
+        for diff_cell in differentiated_cell_lines:
+            for lp in library_preps_for_diff:
+                # If the target is a list, check if the diff_cell's id is in that list.
+                if isinstance(lp.differentiated_biomaterial_id, list):
+                    if diff_cell.biomaterial_id in lp.differentiated_biomaterial_id:
+                        diff_cell.add_library_preparation(lp)
+                elif lp.differentiated_biomaterial_id == diff_cell.biomaterial_id:
+                    diff_cell.add_library_preparation(lp)
+    except Exception as e:
+        print(f"Exception during merging of differentiated cell lines and library preparations: {e}")
+
+
+def merge_cell_line_and_library_preparation_for_lp(cell_lines, library_preps, errors):
+    """
+    Merges library preparations with clonal cell lines.
+    Only processes library preparations whose differentiated_biomaterial_id is found among clonal cell lines.
+    """
+    # Build a set of clonal cell line IDs (those with non-null clone_id)
+    clonal_ids = {cl.biomaterial_id for cl in cell_lines if cl.clone_id is not None}
+    library_preps_for_clones = [lp for lp in library_preps if target_in_ids(lp.differentiated_biomaterial_id, clonal_ids)]
+
+    if not library_preps_for_clones:
+        return  # Nothing to merge for clonal cell lines
+
+    try:
+        find_orphans(
+            source_entities=cell_lines,
+            target_entities=library_preps_for_clones,
+            source_attr="biomaterial_id",
+            target_attr="differentiated_biomaterial_id",
+            source_type="Cell Line (Clonal)",
+            target_type="Library Preparation",
+            errors=errors
+        )
+
+        missing_parent_entity_error = MissingParentEntityError()
+        for lp in library_preps_for_clones:
+            if not target_in_ids(lp.differentiated_biomaterial_id, clonal_ids):
+                missing_parent_entity_error.add_error("Cell Line", "Library Preparation", str(lp.differentiated_biomaterial_id), errors)
+
+        for cl in cell_lines:
+            if cl.clone_id is not None:
+                for lp in library_preps_for_clones:
+                    if isinstance(lp.differentiated_biomaterial_id, list):
+                        if cl.biomaterial_id in lp.differentiated_biomaterial_id:
+                            cl.add_library_preparation(lp)
+                    elif lp.differentiated_biomaterial_id == cl.biomaterial_id:
+                        cl.add_library_preparation(lp)
+    except Exception as e:
+        print(f"Exception during merging of clonal cell lines and library preparations: {e}")
+
+
+def process_library_preparations(cell_lines, differentiated_cell_lines, library_preps, errors):
+    """
+    For UCSF ingestion, process library preparations only for differentiated cell lines.
+    Linking for clonal cell lines is deferred to the submission linking phase.
+    """
+    # Process only the library preparations for differentiated (parental) cell lines.
+    diff_ids = {d.biomaterial_id for d in differentiated_cell_lines}
+    library_preps_for_diff = [lp for lp in library_preps if target_in_ids(lp.differentiated_biomaterial_id, diff_ids)]
+    if library_preps_for_diff:
+        merge_differentiated_cell_line_and_library_preparation_for_lp(differentiated_cell_lines, library_preps_for_diff, errors)
 
 
 class SpreadsheetSubmitter:
@@ -670,177 +728,124 @@ class SpreadsheetSubmitter:
 
         return df
 
-    def parse_cell_lines(self,
-                         sheet_name,
-                         action,
-                         errors):
+    def parse_cell_lines(self, sheet_name, action, errors):
         """
-        Parses data related to cell lines from a specified sheet in the Excel file.
+        Parses cell lines from the clonal cell line sheet.
 
-        Parameters:
-        -----------
-        sheet_name : str
-            The name of the sheet containing cell line data.
+        In UCSF datasets, each row represents a clone (e.g. iPSC_Rep1) that has an associated
+        parental cell line name (e.g. KOLF2.2J_AAVS1_inducible_CRISPRi). Since clones go directly
+        to library preparation and the parental cell line is used for differentiation, this function
+        creates a separate parental cell line entity if its label is not found among the clones.
 
         Returns:
-        --------
-        tuple
-            A tuple containing:
-            - list of CellLine objects parsed from the specified sheet.
-            - pd.DataFrame with the parsed data.
+            combined (list): A list of CellLine objects including both clones and auto-generated parental cell lines.
+            df_filtered (pd.DataFrame): The filtered DataFrame.
+            parental_names (list): A list of unique parental cell line names extracted from the sheet.
         """
         df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         df.columns = df.columns.str.strip()
-        parent_cell_line_names = []
-
-        # Check if the required column exists
         if 'clonal_cell_line.label' not in df.columns:
-            errors.append(
-                f"The column 'clonal_cell_line.label' does not exist in the {sheet_name} sheet. "
-                f"The rest of the file will not be processed")
-            return [], df
+            errors.append(f"The column 'clonal_cell_line.label' does not exist in the {sheet_name} sheet.")
+            return [], df, []
 
-        # Filter rows where biomaterial_id is not null
+        # Filter rows where a cell line label is provided and skip placeholder rows.
         df = df[df['clonal_cell_line.label'].notna()]
-        # Replace invalid float values with None
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-        # Define columns to check for invalid starting values
-        cols_to_check = ['clonal_cell_line.label']
-        invalid_start_values = (
-            'FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
-            'cell_line.biomaterial_core.biomaterial_id'
-        )
-        # Filter out rows with invalid starting values
-        mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(invalid_start_values)).all(axis=1)
-        df_filtered = df[mask]
-        # Check for a unique value in 'cell_line.derived_cell_line_accession'
-        derived_col = 'clonal_cell_line.parental_cell_line_name'
+        mask = df['clonal_cell_line.label'].astype(str).str.startswith('FILL OUT INFORMATION BELOW THIS ROW')
+        df_filtered = df[~mask]
 
-        if derived_col in df_filtered.columns:
-            parent_cell_line_names = df_filtered[derived_col].dropna().unique()
-
-        """
-            if len(parent_cell_line_names) != 1:
-                errors.append(
-                    f"The column '{derived_col}' must have the same value across all rows. Found values: {parent_cell_line_names}")
-
-                return [], df
-        """
-
-        # Process rows to create CellLine objects
         cell_lines = []
-
+        parental_names = set()
         for _, row in df_filtered.iterrows():
             label = row['clonal_cell_line.label']
-            parental_cell_line_name = row.get('clonal_cell_line.parental_cell_line_name')
-            cell_type = row.get('clonal_cell_line.type')
-            expression_alteration_id = row.get('expression_alteration.label')
-
-            # Error handling for missing mandatory fields
-            if pd.isnull(label):
-                errors.append("Biomaterial ID cannot be null in any row of the Cell line/ Clonal cell line sheet.")
-
-            if any(pd.isnull(field) for field in [parental_cell_line_name, cell_type]):
-                errors.append(
-                    f"Mandatory fields (parental_cell_line_name, clonal_cell_line.type, expression_alteration.label) are required for Cell "
-                    f"line/ Clonal cell line entity: {label}")
-
+            parent_name = row.get('clonal_cell_line.parental_cell_line_name')
             cell_lines.append(
                 CellLine(
                     biomaterial_id=label,
                     description=row.get('clonal_cell_line.description'),
-                    parental_cell_line_name=parental_cell_line_name,
+                    parental_cell_line_name=parent_name,
                     clone_id=row.get('clonal_cell_line.clone_id'),
                     protocol_id=row.get('clonal_cell_line.cell_line_generation_protocol'),
                     zygosity=row.get('clonal_cell_line.zygosity'),
-                    cell_type=cell_type,
-                    expression_alteration_id=expression_alteration_id,
-                    wt_control_status=row.get('clonal_cell_line.wt_control_status'),
+                    cell_type=row.get('clonal_cell_line.type'),
                     treatment_condition=row.get('clonal_cell_line.treatment_condition'),
+                    wt_control_status=row.get('clonal_cell_line.wt_control_status'),
+                    expression_alteration_id=row.get('expression_alteration.label'),
                     id=row.get('Id')
                 )
             )
+            # Collect the parental cell line names if they differ from the clone's label.
+            if parent_name and parent_name != label:
+                parental_names.add(parent_name)
 
-        return cell_lines, df_filtered, parent_cell_line_names
+        # Create parental cell line objects for any parental name not already present.
+        existing_ids = {cl.biomaterial_id for cl in cell_lines}
+        parental_cell_lines = []
+        for parent in parental_names:
+            if parent not in existing_ids:
+                parental_cell_lines.append(
+                    CellLine(
+                        biomaterial_id=parent,
+                        description="Auto-generated parental cell line from clonal cell lines",
+                        parental_cell_line_name=None,
+                        clone_id=None,
+                        protocol_id=None,
+                        zygosity=None,
+                        cell_type=None,
+                        treatment_condition=None,
+                        wt_control_status=None,
+                        expression_alteration_id=None,
+                        id=None,
+                        parental_only=True
+                    )
+                )
+        # Combine the auto-generated parental cell lines with the clones.
+        combined = parental_cell_lines + cell_lines
+        return combined, df_filtered, list(parental_names)
 
-    def parse_differentiated_cell_lines(self,
-                                        sheet_name,
-                                        action,
-                                        errors):
+    def parse_differentiated_cell_lines(self, sheet_name, action, errors):
         """
         Parses data related to differentiated cell lines from a specified sheet in the Excel file.
-
-        Parameters:
-        -----------
-        sheet_name : str
-            The name of the sheet containing differentiated cell line data.
-        column_mapping : dict
-            A dictionary mapping column names in the sheet to expected attribute names.
-
-        Returns:
-        --------
-        list
-            A list of DifferentiatedCellLine objects parsed from the specified sheet.
+        Uses the 'clonal_cell_line.parental_cell_line_name' (or falls back to 'clonal_cell_line.label')
+        to link differentiated products to the parental cell line.
         """
         df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         df.columns = df.columns.str.strip()
-        # df = df.rename(columns=column_mapping)
-        # Remove unnamed columns (columns without headers)
-        # df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
 
-        # Check if the required column exists
         if 'differentiated_product.label' not in df.columns:
-            errors.append(f"The column 'differentiated_product.label' does not "
-                          f"exist in {sheet_name} name. The rest of the file will not be processed")
+            errors.append(f"The column 'differentiated_product.label' does not exist in {sheet_name}. The rest of the file will not be processed")
             return [], df
 
-        # Filter rows where biomaterial_id is not null
         df = df[df['differentiated_product.label'].notna()]
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
-        # Define columns to check for values starting with 'ABC' or 'XYZ'
         cols_to_check = ['differentiated_product.label']
-        # Create a mask to filter rows where any of the specified columns start with 'ABC' or 'XYZ'
         mask = df[cols_to_check].apply(lambda x: ~x.astype(str).str.startswith(
             ('FILL OUT INFORMATION BELOW THIS ROW', 'A unique ID for the biomaterial.',
              'differentiated_cell_line.biomaterial_core.biomaterial_id'))).all(axis=1)
-        # Apply the mask to filter out rows
         df_filtered = df[mask]
-        # Check for mandatory fields and create Differentiated CellLine objects
-        differentiated_cell_lines = []
 
+        differentiated_cell_lines = []
         for _, row in df_filtered.iterrows():
             label = row['differentiated_product.label']
-            parent_biomaterial_id = row.get('clonal_cell_line.label')
-
-            # Check if biomaterial_id is null
+            # Attempt to get the parental cell line name; if missing, fallback to the provided clonal label.
+            parent_biomaterial_id = row.get('clonal_cell_line.parental_cell_line_name') or row.get('clonal_cell_line.label')
             if pd.isnull(label):
-                errors.append("Differentiated Cell line ID cannot be null in any row of the Differentiated Cell line "
-                              "sheet.")
-                # raise MissingMandatoryFieldError("Differentiated Cell line ID cannot be null in any row.")
-
-            # Check if derived_accession and cell_type are present
+                errors.append("Differentiated Cell line ID cannot be null in any row of the Differentiated Cell line sheet.")
             if pd.isnull(parent_biomaterial_id):
-                errors.append(f"Input Cell line ID cannot be null for Differentiated Cell line:  "
-                              f"{label}")
-                """
-                raise MissingMandatoryFieldError(
-                    "Input Cell line ID cannot be null. " + differentiated_biomaterial_id)
-                """
+                errors.append(f"Parental Cell line ID cannot be null for Differentiated Cell line: {label}")
 
-            # Create DifferentiatedCellLine objects from filtered DataFrame rows
             differentiated_cell_lines.append(
                 DifferentiatedCellLine(
                     biomaterial_id=label,
                     description=row.get('differentiated_product.description'),
-                    cell_line_biomaterial_id=parent_biomaterial_id,
-                    differentiated_product_protocol_id=row.get(
-                        'differentiated_product.differentiated_product_protocol_id'),
+                    cell_line_biomaterial_id=parent_biomaterial_id,  # Linking to parental cell line
+                    differentiated_product_protocol_id=row.get('differentiated_product.differentiated_product_protocol_id'),
                     undifferentiated_product_protocol_id=None,
                     treatment_condition=row.get('differentiated_product.treatment_condition'),
                     wt_control_status=row.get('differentiated_product.wt_control_status'),
                     timepoint_value=row.get('differentiated_product.timepoint_value'),
                     timepoint_unit=row.get('differentiated_product.timepoint_unit'),
-                    terminally_differentiated=row.get('differentiated_product.terminally_differentiated'),
+                    terminally_differentiated=row.get('differentiated_product.final_timepoint'),
                     model_system=row.get('differentiated_product.model_system'),
                     id=row.get('Id')
                 )
@@ -1134,68 +1139,43 @@ class SpreadsheetSubmitter:
 
         return sequencing_files, df_filtered
 
-    def parse_expression_alteration(self,
-                                    sheet_name,
-                                    action,
-                                    errors):
+    def parse_expression_alteration(self, sheet_name, action, errors):
         """
         Parses data related to expression alterations from a specified sheet in the Excel file.
-
-        Parameters:
-        -----------
-        sheet_name : str
-            The name of the sheet containing expression alterations data.
-        action : str
-            The action to be performed on the data.
-        errors : list
-            A list to accumulate error messages.
-
-        Returns:
-        --------
-        tuple
-            A tuple containing:
-            - A list of ExpressionAlterationStrategy objects parsed from the specified sheet (if valid)
-            - The filtered DataFrame of the parsed data
-            - A boolean indicating whether the expression alteration strategy sheet exists and is valid
+        For datasets where the expression alteration tab is empty (e.g., UCSF), returns an empty list.
         """
-        # Attempt to parse the input file into a DataFrame
         try:
             df = self.input_file_to_data_frames(sheet_name=sheet_name, action=action)
         except Exception as e:
             errors.append(f"Missing sheet '{sheet_name}': {e}")
-            return [], None, False
+            return [], None
 
-        # Strip whitespace from column names
+        # If the DataFrame is empty or does not have the required column, return empty results.
+        if df.empty or 'expression_alteration.label' not in df.columns:
+            return [], df
+
         df.columns = df.columns.str.strip()
 
-        # Check if the required column exists
         required_columns = ['expression_alteration.label']
         missing_columns = [col for col in required_columns if col not in df.columns]
-
         if missing_columns:
             errors.append(
                 f"The following required columns are missing in the Expression Alteration Strategy sheet: {', '.join(missing_columns)}")
-            return [], df, False  # Return if required columns are missing
+            return [], df
 
         # Filter rows where 'expression_alteration.label' is not null
         df = df[df['expression_alteration.label'].notna()]
-        # Replace invalid float values (e.g., NaN, infinite) with None
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
 
-        # Define unwanted patterns to filter out unwanted rows
         unwanted_patterns = (
             'FILL OUT INFORMATION BELOW THIS ROW',
             'A unique ID for the gene expression alteration instance..',
             'ID should have no spaces. For example: JAXPE0001_MEIS1, MSKKI119_MEF2C, NWU_AID'
         )
-
-        # Create a mask to filter out rows with unwanted starting values
         mask = df['expression_alteration.label'].astype(str).str.startswith(unwanted_patterns)
         df_filtered = df[~mask]
 
-        # Initialize the list of ExpressionAlterationStrategy objects
         expression_alterations = []
-
         for _, row in df_filtered.iterrows():
             expression_alterations.append(
                 ExpressionAlterationStrategy(
@@ -1207,14 +1187,13 @@ class SpreadsheetSubmitter:
                     targeted_genomic_region=row.get('expression_alteration.genes.targeted_genomic_region'),
                     expected_alteration_type=row.get('expression_alteration.genes.expected_alteration_type'),
                     editing_strategy=row.get('expression_alteration.genes.editing_strategy'),
-                    altered_locus=row.get('expression_alteration.genes.altered_locus'),  # No longer a placeholder
-                    guide_sequence=row.get('expression_alteration.genes.guide_sequence'),  # No longer a placeholder
+                    altered_locus=row.get('expression_alteration.genes.altered_locus'),
+                    guide_sequence=row.get('expression_alteration.genes.guide_sequence'),
                     method=row.get('expression_alteration.method'),
                     id=row.get('Id')
                 )
             )
 
-        # Return the list of objects, the filtered DataFrame, and a flag indicating success
         return expression_alterations, df_filtered
 
     def get_cell_lines(self,

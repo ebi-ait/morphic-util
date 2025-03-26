@@ -909,69 +909,54 @@ class CmdSubmit:
 
         return process_entity_id
 
-    def establish_links(self,
-                        cell_lines,
-                        cell_lines_df,
-                        differentiated_or_undifferentiated_cell_lines,
-                        differentiated_or_undifferentiated_cell_lines_df,
-                        library_preparations,
-                        library_preparations_df,
-                        sequencing_files,
-                        sequencing_files_df,
-                        submission_envelope_id,
-                        dataset_id,
+    def _link_cell_lines_to_children(self, cell_lines, child_lines, dataset_id, submission_envelope_id, access_token, action, errors):
+        """
+        Link each cell line to its corresponding differentiated/undifferentiated children.
+        Uses the 'input_biomaterial_id' attribute if present; otherwise, falls back to 'cell_line_biomaterial_id'.
+        """
+        print("Linking cell lines with their differentiated/undifferentiated children.")
+        for cl in cell_lines:
+            for child in child_lines:
+                # Use 'input_biomaterial_id' if available; otherwise, use 'cell_line_biomaterial_id'
+                child_id = getattr(child, "input_biomaterial_id", None) or child.cell_line_biomaterial_id
+                if cl.biomaterial_id == child_id:
+                    print(f"Linking cell line {cl.biomaterial_id} to child {child.biomaterial_id}.")
+                    self.link_cell_line_and_differentiated_cell_line(
                         access_token,
+                        cl,
+                        child,
+                        dataset_id,
+                        submission_envelope_id,
                         action,
-                        errors):
+                        errors
+                    )
+
+    def _process_library_preparations(self, cell_lines, diff_lines, library_preps, dataset_id, submission_envelope_id, access_token, action, errors, context):
         """
-        Establishes links between cell lines, differentiated (or undifferentiated) cell lines,
-        library preparations, and sequencing files.
+        Process library preparations and link them to cell lines using different logic based on context.
 
-        For library preparations:
-          - If the target (differentiated_biomaterial_id) matches a clone (cell line with non-null clone_id),
-            call link_clone_to_library_preparation_process to create a LP process and link the clone as input
-            and the LP biomaterial as derived by the process.
-          - Otherwise, if the target matches a differentiated (or parental) cell line, call the existing
-            link_differentiated_and_library_preparation method.
+        If context=="unperturbed_multiple":
+          - For each target in the library preparation (which is ensured to be a list),
+            check first for clones (cell lines with a non-null clone_id) and link via
+            link_clone_to_library_preparation_process.
+          - If no clone is found, then check for a matching differentiated cell line
+            and link via link_differentiated_and_library_preparation.
 
-        Sequencing files are then linked using the updated LP biomaterial ID.
-
-        Returns:
-            A tuple: ([cell_lines_df, differentiated_or_undifferentiated_cell_lines_df,
-                      library_preparations_df, sequencing_files_df], message)
+        Otherwise, use legacy exact matching.
         """
-        import logging
-        logging.debug("Starting establish_links process.")
-        try:
-            # 1. Link cell lines with their differentiated/undifferentiated children.
-            logging.debug("Linking cell lines with their differentiated/undifferentiated children.")
-            for cl in cell_lines:
-                for child in differentiated_or_undifferentiated_cell_lines:
-                    if cl.biomaterial_id == child.cell_line_biomaterial_id:
-                        logging.debug(f"Linking cell line {cl.biomaterial_id} to child {child.biomaterial_id}.")
-                        self.link_cell_line_and_differentiated_cell_line(
-                            access_token,
-                            cl,
-                            child,
-                            dataset_id,
-                            submission_envelope_id,
-                            action,
-                            errors
-                        )
-
-            # 2. Process library preparations.
-            logging.debug("Processing library preparations for linking.")
-            for lp in library_preparations:
-                # Ensure lp.differentiated_biomaterial_id is treated as a list.
-                targets = lp.differentiated_biomaterial_id
-                if not isinstance(targets, list):
-                    targets = [targets]
+        print("Processing library preparations for linking.")
+        for lp in library_preps:
+            targets = lp.differentiated_biomaterial_id
+            if not isinstance(targets, list):
+                targets = [targets]
+            if context == "unperturbed_multiple":
+                # New behavior: try matching clones first, then differentiated cell lines.
                 for target in targets:
                     linked = False
-                    # First, check among clonal cell lines.
+                    # Check among clones (cell lines with non-null clone_id)
                     for cl in cell_lines:
                         if cl.clone_id is not None and cl.biomaterial_id == target:
-                            logging.debug(f"LP {lp.biomaterial_id}: target {target} matches clone {cl.biomaterial_id}.")
+                            print(f"LP {lp.biomaterial_id}: target {target} matches clone {cl.biomaterial_id}.")
                             self.link_clone_to_library_preparation_process(
                                 cl,
                                 lp,
@@ -982,11 +967,11 @@ class CmdSubmit:
                                 errors
                             )
                             linked = True
-                    # Next, check among differentiated (or parental) cell lines.
+                    # If no clone match found, check among differentiated/parental cell lines.
                     if not linked:
-                        for diff in differentiated_or_undifferentiated_cell_lines:
+                        for diff in diff_lines:
                             if diff.biomaterial_id == target:
-                                logging.debug(f"LP {lp.biomaterial_id}: target {target} matches differentiated cell line {diff.biomaterial_id}.")
+                                print(f"LP {lp.biomaterial_id}: target {target} matches differentiated cell line {diff.biomaterial_id}.")
                                 self.link_differentiated_and_library_preparation(
                                     access_token,
                                     diff,
@@ -1000,37 +985,90 @@ class CmdSubmit:
                                 break
                     if not linked:
                         err_msg = f"LP {lp.biomaterial_id}: target ID {target} not found among cell lines."
-                        logging.error(err_msg)
+                        print(err_msg)
                         errors.append(err_msg)
+            else:
+                # Legacy behavior (e.g. for MSK/JAX): exact matching.
+                for target in targets:
+                    for diff in diff_lines:
+                        if diff.biomaterial_id == target:
+                            print(f"(Legacy) LP {lp.biomaterial_id}: target {target} matches differentiated cell line {diff.biomaterial_id}.")
+                            self.link_differentiated_and_library_preparation(
+                                access_token,
+                                diff,
+                                lp,
+                                dataset_id,
+                                submission_envelope_id,
+                                action,
+                                errors
+                            )
 
-            # 3. Link sequencing files with library preparations.
-            logging.debug("Linking sequencing files to library preparations.")
-            for lp in library_preparations:
-                for sf in sequencing_files:
-                    # Use the updated LP biomaterial ID for matching.
-                    if lp.biomaterial_id == sf.library_preparation_id:
-                        logging.debug(f"Linking sequencing file {sf.file_name} with LP {lp.biomaterial_id}.")
-                        self.link_library_preparation_and_sequencing_file(
-                            access_token,
-                            lp,
-                            sf,
-                            dataset_id,
-                            submission_envelope_id,
-                            action,
-                            errors
-                        )
+    def _link_sequencing_files(self, library_preps, sequencing_files, dataset_id, submission_envelope_id, access_token, action, errors):
+        """
+        Link each sequencing file with its corresponding library preparation.
+        """
+        print("Linking sequencing files to library preparations.")
+        for lp in library_preps:
+            for sf in sequencing_files:
+                # Match using the (updated) library preparation biomaterial ID
+                if lp.biomaterial_id == sf.library_preparation_id:
+                    print(f"Linking sequencing file {sf.file_name} with LP {lp.biomaterial_id}.")
+                    self.link_library_preparation_and_sequencing_file(
+                        access_token,
+                        lp,
+                        sf,
+                        dataset_id,
+                        submission_envelope_id,
+                        action,
+                        errors
+                    )
+
+    def establish_links(self,
+                        cell_lines,
+                        cell_lines_df,
+                        diff_or_undiff_cell_lines,
+                        diff_or_undiff_cell_lines_df,
+                        library_preparations,
+                        library_preparations_df,
+                        sequencing_files,
+                        sequencing_files_df,
+                        submission_envelope_id,
+                        dataset_id,
+                        access_token,
+                        action,
+                        errors,
+                        context=None):
+        """
+        Establish links between cell lines, differentiated (or undifferentiated) cell lines,
+        library preparations, and sequencing files.
+
+        The linking behavior for library preparations depends on the 'context' parameter:
+          - If context is "unperturbed_multiple", the new behavior is used.
+          - Otherwise, legacy behavior (exact matching) is applied.
+
+        Returns:
+            Tuple: ([cell_lines_df, diff_or_undiff_cell_lines_df, library_preparations_df, sequencing_files_df], message)
+        """
+        print("Starting establish_links process.")
+        try:
+            # 1. Link cell lines with their differentiated/undifferentiated children.
+            self._link_cell_lines_to_children(cell_lines, diff_or_undiff_cell_lines, dataset_id, submission_envelope_id, access_token, action, errors)
+
+            # 2. Process library preparations based on the provided context.
+            self._process_library_preparations(cell_lines, diff_or_undiff_cell_lines, library_preparations, dataset_id, submission_envelope_id, access_token, action, errors, context)
+
+            # 3. Link sequencing files to library preparations.
+            self._link_sequencing_files(library_preparations, sequencing_files, dataset_id, submission_envelope_id, access_token, action, errors)
+
             message = 'SUCCESS'
-            logging.debug("establish_links completed successfully.")
+            print("establish_links completed successfully.")
         except Exception as e:
             message = f"An error occurred: {str(e)}"
             errors.append(message)
-            logging.error(message)
+            print(message)
             raise SubmissionError(message, e)
 
-        return ([cell_lines_df,
-                 differentiated_or_undifferentiated_cell_lines_df,
-                 library_preparations_df,
-                 sequencing_files_df], message)
+        return ([cell_lines_df, diff_or_undiff_cell_lines_df, library_preparations_df, sequencing_files_df], message)
 
     def typed_submission(self, type, file, access_token):
         """
@@ -1340,7 +1378,8 @@ class CmdSubmit:
         # print(f"\nDeleting the dataset: {dataset}")
         # self.provider_api.delete(f"{self.BASE_URL}/datasets/{dataset}", access_token)
 
-    def link_clone_to_library_preparation_process(self, cell_line, library_preparation, dataset_id, submission_envelope_id, access_token, action, errors):
+    def link_clone_to_library_preparation_process(self, cell_line, library_preparation, dataset_id,
+                                                  submission_envelope_id, access_token, action, errors):
         """
         For a clonal cell line (one with a non-null clone_id), this method creates a library preparation process,
         then links the clone as input and the existing library preparation biomaterial as derived by the process.
@@ -1351,7 +1390,8 @@ class CmdSubmit:
             process_entity_id (str): The ID of the created library preparation process.
         """
         import logging
-        logging.debug(f"Starting LP process linking for clone {cell_line.biomaterial_id} and LP biomaterial {library_preparation.id}")
+        logging.debug(
+            f"Starting LP process linking for clone {cell_line.biomaterial_id} and LP biomaterial {library_preparation.id}")
         try:
             # Create the library preparation process.
             process_entity_id = self.create_process(
@@ -1378,4 +1418,3 @@ class CmdSubmit:
             logging.error(error_msg)
             errors.append(error_msg)
             raise SubmissionError(errors, e)
-

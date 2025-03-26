@@ -368,6 +368,7 @@ def find_orphans(source_entities,
                  errors):
     """
     Validates that each source entity has a corresponding target entity.
+    For parental cell lines, a target is considered a match if it starts with the source value.
 
     Parameters:
         source_entities (list): The list of source entities.
@@ -379,6 +380,7 @@ def find_orphans(source_entities,
 
     Raises:
         OrphanedEntityError: If a source entity doesn't have a corresponding target entity.
+
     """
     for source_entity in source_entities:
         match_found = False
@@ -387,15 +389,20 @@ def find_orphans(source_entities,
         for target_entity in target_entities:
             target_value = getattr(target_entity, target_attr)
 
-            # Handle case where target_value is a list
             if isinstance(target_value, list):
                 if source_value in target_value:
                     match_found = True
                     break
             else:
-                if target_value == source_value:
-                    match_found = True
-                    break
+                # For parental cell lines, allow prefix matching.
+                if source_type == "Cell line (Parental)":
+                    if str(target_value).startswith(str(source_value)):
+                        match_found = True
+                        break
+                else:
+                    if target_value == source_value:
+                        match_found = True
+                        break
 
         if not match_found:
             errors.append(f"Orphaned entity {source_type} and ID is {source_value}")
@@ -470,8 +477,10 @@ def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_l
 
         missing_parent_entity_error = MissingParentEntityError()
         differentiated_ids = {diff_cell.biomaterial_id for diff_cell in differentiated_cell_lines}
+
         for library_preparation in library_preparations:
             diff_biomaterial_id = library_preparation.differentiated_biomaterial_id
+
             if isinstance(diff_biomaterial_id, list):
                 missing_ids = [id_ for id_ in diff_biomaterial_id if id_ not in differentiated_ids]
                 if missing_ids:
@@ -483,26 +492,28 @@ def merge_differentiated_cell_line_and_library_preparation(differentiated_cell_l
         for diff_cell in differentiated_cell_lines:
             for library_preparation in library_preparations:
                 diff_biomaterial_id = library_preparation.differentiated_biomaterial_id
+
                 if isinstance(diff_biomaterial_id, list):
                     if diff_cell.biomaterial_id in diff_biomaterial_id:
                         diff_cell.add_library_preparation(library_preparation)
                 elif diff_biomaterial_id == diff_cell.biomaterial_id:
                     diff_cell.add_library_preparation(library_preparation)
+
     except Exception as e:
         print(f"Exception occurred during merging of differentiated cell lines and library preparations: {e}")
 
 
-def merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines, errors):
+def merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines, errors, context=None):
     """
     Merges cell lines and differentiated cell lines based on their biomaterial IDs.
-
-    Only parental cell lines (those without a clone_id, or auto-generated as parents) are used
-    for linking to differentiated products. This ensures that clones (which go directly to library preparation)
-    are not forced to be the parent of differentiated products.
+    Only parental cell lines (those with clone_id is None) are used for linking.
+    For parental cell lines, a prefix match is used.
     """
     # Filter to include only parental cell lines.
-    parental_cell_lines = [cl for cl in cell_lines if cl.clone_id is None]
-
+    if context == "unperturbed_multiple":
+        parental_cell_lines = [cl for cl in cell_lines if cl.clone_id is None]
+    else:
+        parental_cell_lines = cell_lines
     try:
         find_orphans(
             source_entities=parental_cell_lines,
@@ -515,6 +526,7 @@ def merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell
         )
 
         missing_parent_entity_error = MissingParentEntityError()
+
         parental_ids = {cl.biomaterial_id for cl in parental_cell_lines}
         for diff_cell in differentiated_cell_lines:
             if diff_cell.cell_line_biomaterial_id not in parental_ids:
@@ -524,8 +536,10 @@ def merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell
             for diff_cell in differentiated_cell_lines:
                 if diff_cell.cell_line_biomaterial_id == cl.biomaterial_id:
                     cl.add_differentiated_cell_line(diff_cell)
+
     except Exception as e:
         print(f"Exception occurred during merging: {e}")
+
 
 def target_in_ids(target, id_set):
     """
@@ -728,7 +742,7 @@ class SpreadsheetSubmitter:
 
         return df
 
-    def parse_cell_lines(self, sheet_name, action, errors):
+    def parse_cell_lines(self, sheet_name, action, errors, context=None):
         """
         Parses cell lines from the clonal cell line sheet.
 
@@ -748,7 +762,7 @@ class SpreadsheetSubmitter:
             errors.append(f"The column 'clonal_cell_line.label' does not exist in the {sheet_name} sheet.")
             return [], df, []
 
-        # Filter rows where a cell line label is provided and skip placeholder rows.
+        # Filter out placeholder rows.
         df = df[df['clonal_cell_line.label'].notna()]
         df = df.map(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
         mask = df['clonal_cell_line.label'].astype(str).str.startswith('FILL OUT INFORMATION BELOW THIS ROW')
@@ -774,33 +788,34 @@ class SpreadsheetSubmitter:
                     id=row.get('Id')
                 )
             )
-            # Collect the parental cell line names if they differ from the clone's label.
             if parent_name and parent_name != label:
                 parental_names.add(parent_name)
 
-        # Create parental cell line objects for any parental name not already present.
-        existing_ids = {cl.biomaterial_id for cl in cell_lines}
-        parental_cell_lines = []
-        for parent in parental_names:
-            if parent not in existing_ids:
-                parental_cell_lines.append(
-                    CellLine(
-                        biomaterial_id=parent,
-                        description="Auto-generated parental cell line from clonal cell lines",
-                        parental_cell_line_name=None,
-                        clone_id=None,
-                        protocol_id=None,
-                        zygosity=None,
-                        cell_type=None,
-                        treatment_condition=None,
-                        wt_control_status=None,
-                        expression_alteration_id=None,
-                        id=None,
-                        parental_only=True
+        # Only auto‑generate parental cell lines if we’re in UCSF mode.
+        if context == "unperturbed_multiple":
+            parental_cell_lines = []
+            for parent in parental_names:
+                if parent not in {cl.biomaterial_id for cl in cell_lines}:
+                    parental_cell_lines.append(
+                        CellLine(
+                            biomaterial_id=parent,
+                            description="Auto-generated parental cell line from clonal cell lines",
+                            parental_cell_line_name=None,
+                            clone_id=None,
+                            protocol_id=None,
+                            zygosity=None,
+                            cell_type=None,
+                            treatment_condition=None,
+                            wt_control_status=None,
+                            expression_alteration_id=None,
+                            id=None,
+                            parental_only=True
+                        )
                     )
-                )
-        # Combine the auto-generated parental cell lines with the clones.
-        combined = parental_cell_lines + cell_lines
+            combined = parental_cell_lines + cell_lines
+        else:
+            combined = cell_lines  # Legacy mode: use only the clones.
+
         return combined, df_filtered, list(parental_names)
 
     def parse_differentiated_cell_lines(self, sheet_name, action, errors):
@@ -1199,7 +1214,8 @@ class SpreadsheetSubmitter:
     def get_cell_lines(self,
                        sheet_name,
                        action,
-                       errors):
+                       errors,
+                       context=None):
         """
         Retrieves parsed cell lines data from a specified sheet in the Excel file.
 
@@ -1215,7 +1231,7 @@ class SpreadsheetSubmitter:
         list
             A list of CellLine objects parsed from the specified sheet.
         """
-        cell_lines, cell_lines_df, parent_cell_line_names = self.parse_cell_lines(sheet_name, action, errors)
+        cell_lines, cell_lines_df, parent_cell_line_names = self.parse_cell_lines(sheet_name, action, errors, context)
         return cell_lines, cell_lines_df, parent_cell_line_names
 
     def get_differentiated_cell_lines(self,

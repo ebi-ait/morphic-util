@@ -93,6 +93,11 @@ class CmdSubmitFile:
         self.submission_errors = []
         self.submission_envelope_id = None
 
+        # Read and store the context argument (if provided)
+        # For UCSF datasets, you might pass --context unperturbed_multiple.
+        self.context = getattr(args, "context", None)
+        print(f"-----Context: {self.context}")
+
         # Assign and validate required arguments
         self.action = self._get_required_arg('action', "Submission action (ADD, MODIFY or DELETE) is mandatory")
         self.dataset = self._get_required_arg('dataset', (
@@ -359,7 +364,7 @@ class CmdSubmitFile:
             )
 
             cell_lines, cell_lines_df, parent_cell_line_names = parser.get_cell_lines(
-                cell_line_sheet_name, self.action, self.validation_errors
+                cell_line_sheet_name, self.action, self.validation_errors, context=self.context
             )
 
             if differentiated_cell_line_sheet_name:
@@ -381,11 +386,11 @@ class CmdSubmitFile:
             if differentiated_cell_lines:
                 differentiated = True
                 merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines,
-                                                             self.validation_errors)
+                                                             self.validation_errors, context=self.context)
 
             if undifferentiated_cell_lines and not differentiated:
                 merge_cell_line_and_differentiated_cell_line(cell_lines, undifferentiated_cell_lines,
-                                                             self.validation_errors)
+                                                             self.validation_errors, context=self.context)
 
             library_preparations_result = parser.get_library_preparations(
                 'Library preparation', differentiated, self.action, self.validation_errors)
@@ -401,22 +406,20 @@ class CmdSubmitFile:
                     differentiated_ids = lp.differentiated_biomaterial_id.split("|")
                     lp.differentiated_biomaterial_id = differentiated_ids
 
-            # if differentiated_cell_lines:
-            #     merge_differentiated_cell_line_and_library_preparation(
-            #         differentiated_cell_lines, library_preparations, self.validation_errors, cell_lines=cell_lines
-            #     )
-            #
-            # if undifferentiated_cell_lines and not differentiated:
-            #     merge_differentiated_cell_line_and_library_preparation(
-            #         undifferentiated_cell_lines, library_preparations, self.validation_errors, cell_lines=cell_lines
-            #     )
-
             if differentiated_cell_lines:
-                # For UCSF differentiated datasets, use the parental cell lines (generated from the clonal sheet)
-                process_library_preparations(cell_lines, differentiated_cell_lines, library_preparations, self.validation_errors)
+                if self.context == "unperturbed_multiple":
+                    # Use the new processing that creates a LP process and links the clone and differentiated product
+                    process_library_preparations(cell_lines, differentiated_cell_lines, library_preparations, self.validation_errors)
+                else:
+                    # Use the original merge function for differentiated cell lines (for MSK, JAX, etc.)
+                    merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
+                                                                           library_preparations, self.validation_errors, cell_lines=cell_lines)
             elif undifferentiated_cell_lines and not differentiated:
-                # For UCSF undifferentiated datasets, pass the undifferentiated cell lines
-                process_library_preparations(cell_lines, undifferentiated_cell_lines, library_preparations, self.validation_errors)
+                if self.context == "unperturbed_multiple":
+                    process_library_preparations(cell_lines, undifferentiated_cell_lines, library_preparations, self.validation_errors)
+                else:
+                    merge_differentiated_cell_line_and_library_preparation(undifferentiated_cell_lines,
+                                                                           library_preparations, self.validation_errors, cell_lines=cell_lines)
 
             sequencing_files, sequencing_files_df = parser.get_sequencing_files(
                 'Sequence file', self.action, self.validation_errors
@@ -622,7 +625,8 @@ class CmdSubmitFile:
             self.dataset,
             self.access_token,
             self.action,
-            self.submission_errors
+            self.submission_errors,
+            context=self.context
         )
 
         return updated_dfs, message

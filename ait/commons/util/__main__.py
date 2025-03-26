@@ -90,6 +90,12 @@ def parse_args(args):
     parser_config.add_argument('--file', help='spreadsheet containing your dataset metadata')
     parser_config.add_argument('--action', help='action you want to perform (ADD/MODIFY/DELETE')
     parser_config.add_argument('--dataset', help='your dataset reference')
+    parser_config.add_argument(
+        '--context',
+        help="Optional context for ingestion (e.g. 'unperturbed_multiple' for UCSF mode). "
+             "If omitted, legacy behavior is used.",
+        default=None
+    )
 
     parser_config = cmd_parser.add_parser('view', help='view your dataset')
     parser_config.add_argument('--dataset', help='your dataset reference')

@@ -1039,15 +1039,25 @@ class CmdSubmit:
                         errors,
                         context=None):
         """
-        Establish links between cell lines, differentiated (or undifferentiated) cell lines,
-        library preparations, and sequencing files.
+        Handles the submission of multiple types of biomaterials (cell lines,
+        differentiated cell lines, library preparations)
+        to a specified submission envelope.
+
+        Parameters:
+        - cell_lines: List of cell line objects to be submitted.
+        - cell_lines_df: DataFrame for tracking cell line entity IDs.
+        - differentiated_cell_lines_df: DataFrame for tracking differentiated cell line entity IDs.
+        - library_preparations_df: DataFrame for tracking library preparation entity IDs.
+        - sequencing_file_df: DataFrame for tracking sequencing file entity IDs.
+        - submission_envelope_id: ID of the submission envelope where entities will be linked.
+        - access_token: Access token for authentication and authorization.
 
         The linking behavior for library preparations depends on the 'context' parameter:
           - If context is "unperturbed_multiple", the new behavior is used.
           - Otherwise, legacy behavior (exact matching) is applied.
 
         Returns:
-            Tuple: ([cell_lines_df, diff_or_undiff_cell_lines_df, library_preparations_df, sequencing_files_df], message)
+        - Tuple containing updated DataFrames and a status message.
         """
         print("Starting establish_links process.")
         try:

@@ -126,18 +126,23 @@ class ExpressionAlterationStrategy:
     def __init__(self,
                  expression_alteration_id,
                  parent_protocol_id,
-                 allele_specific,
-                 altered_gene_symbol,
-                 target_gene_hgnc_id,
-                 targeted_genomic_region,
-                 expected_alteration_type,
-                 editing_strategy,
-                 altered_locus,
-                 guide_sequence,
                  method,
-                 id):
+                 id=None,
+                 allele_specific=None,
+                 altered_gene_symbol=None,
+                 target_gene_hgnc_id=None,
+                 targeted_genomic_region=None,
+                 expected_alteration_type=None,
+                 editing_strategy=None,
+                 altered_locus=None,
+                 guide_sequence=None,
+                 genes=None):
         self.expression_alteration_id = expression_alteration_id
         self.parent_protocol_id = parent_protocol_id
+        self.method = method
+        self.id = id
+
+        # Legacy mode
         self.allele_specific = allele_specific
         self.altered_gene_symbol = altered_gene_symbol
         self.target_gene_hgnc_id = target_gene_hgnc_id
@@ -146,32 +151,37 @@ class ExpressionAlterationStrategy:
         self.editing_strategy = editing_strategy
         self.altered_locus = altered_locus
         self.guide_sequence = guide_sequence
-        self.method = method
-        self.id = id
 
-    def __repr__(self):
-        return json.dumps(self.to_dict(), indent=2)
+        # New pooled-style gene list
+        self.genes = genes or []
 
     def to_dict(self):
+        # Prefer pooled-style genes array if present
+        if self.genes:
+            genes_payload = self.genes
+        else:
+            genes_payload = [{
+                "allele_specific": self.allele_specific,
+                "altered_gene_symbol": self.altered_gene_symbol,
+                "target_gene_hgnc_id": self.target_gene_hgnc_id,
+                "targeted_genomic_region": self.targeted_genomic_region,
+                "expected_alteration_type": self.expected_alteration_type,
+                "editing_strategy": self.editing_strategy,
+                "altered_locus": self.altered_locus,
+                "guide_sequence": self.guide_sequence
+            }]
+
         return {
             "content": {
                 "expression_alteration_id": self.expression_alteration_id,
                 "parent_protocol_id": self.parent_protocol_id,
-                "genes": [
-                    {
-                        "allele_specific": self.allele_specific,
-                        "altered_gene_symbol": self.altered_gene_symbol,
-                        "target_gene_hgnc_id": self.target_gene_hgnc_id,
-                        "targeted_genomic_region": self.targeted_genomic_region,
-                        "expected_alteration_type": self.expected_alteration_type,
-                        "editing_strategy": self.editing_strategy,
-                        "altered_locus": self.altered_locus,
-                        "guide_sequence": self.guide_sequence
-                    }
-                ],
-                "method": self.method,
+                "genes": genes_payload,
+                "method": self.method
             }
         }
+
+    def __repr__(self):
+        return json.dumps(self.to_dict(), indent=2)
 
 
 class DifferentiatedCellLine:
@@ -1211,6 +1221,122 @@ class SpreadsheetSubmitter:
 
         return expression_alterations, df_filtered
 
+    def find_sheet_name(tab_names, candidates):
+        """
+        Find the first matching sheet name from a list of candidates.
+        """
+        for candidate in candidates:
+            if candidate in tab_names:
+                return candidate
+        return None
+
+    def parse_expression_alteration_with_genes(self, strategy_sheet, action, errors):
+        """
+        Parses pooled expression alteration strategy from the main tab and links all rows
+        in the 'Expression alteration - Genes' tab to the single strategy that contains
+        'various' in gene-related fields.
+
+        Returns:
+            Tuple[List[ExpressionAlterationStrategy], pd.DataFrame]
+        """
+        try:
+            df = self.input_file_to_data_frames(sheet_name=strategy_sheet, action=action)
+        except Exception as e:
+            errors.append(f"Missing sheet '{strategy_sheet}': {e}")
+            return [], None
+
+        if df.empty or 'expression_alteration.label' not in df.columns:
+            errors.append("Expression alteration sheet is empty or missing required column.")
+            return [], df
+
+        df.columns = df.columns.str.strip()
+        df = df[df['expression_alteration.label'].notna()]
+        df = df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
+
+        unwanted_patterns = (
+            'FILL OUT INFORMATION BELOW THIS ROW',
+            'A unique ID for the gene expression alteration instance..',
+            'ID should have no spaces.'
+        )
+        mask = df['expression_alteration.label'].astype(str).str.startswith(unwanted_patterns)
+        df_filtered = df[~mask]
+
+        if df_filtered.empty:
+            errors.append("No valid expression alteration strategy rows found.")
+            return [], df_filtered
+
+        # Expecting only one strategy (with 'various' gene info)
+        strategy_row = df_filtered.iloc[0]
+        label = strategy_row.get('expression_alteration.label')
+
+        # Load gene tab
+        try:
+            available_tabs = self.list_sheets()
+            gene_sheet_name = next(
+                (name for name in ['expression_alteration_genes', 'Expression alteration - Genes'] if name in available_tabs),
+                None
+            )
+            if not gene_sheet_name:
+                raise ValueError("No gene-level sheet found for pooled expression alterations.")
+
+            gene_df = self.input_file_to_data_frames(sheet_name=gene_sheet_name, action=action)
+            gene_df.columns = gene_df.columns.str.strip()
+            gene_df = gene_df[gene_df['expression_alteration.genes.altered_gene_symbol'].notna()]
+            gene_df = gene_df.applymap(lambda x: None if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)) else x)
+
+        except Exception as e:
+            errors.append(f"Missing or unreadable gene-level sheet: {e}")
+            return [], df_filtered
+
+        # Convert gene rows to dicts
+        genes = []
+        flattened_records = []
+        for _, gene_row in gene_df.iterrows():
+            gene_data = {
+                'allele_specific': gene_row.get('expression_alteration.genes.allele_specific'),
+                'altered_gene_symbol': gene_row.get('expression_alteration.genes.altered_gene_symbol'),
+                'target_gene_hgnc_id': gene_row.get('expression_alteration.genes.target_gene_hgnc_id'),
+                'targeted_genomic_region': gene_row.get('expression_alteration.genes.targeted_genomic_region'),
+                'expected_alteration_type': gene_row.get('expression_alteration.genes.expected_alteration_type'),
+                'editing_strategy': gene_row.get('expression_alteration.genes.editing_strategy'),
+                'altered_locus': gene_row.get('expression_alteration.genes.altered_locus'),
+                'guide_sequence': gene_row.get('expression_alteration.genes.guide_sequence')
+            }
+            genes.append(gene_data)
+
+            # Used later for writing into Excel
+            flattened_records.append({
+                'expression_alteration.label': label,
+                'expression_alteration.parent_protocol_id': strategy_row.get('expression_alteration.parent_protocol_id'),
+                'expression_alteration.method': strategy_row.get('expression_alteration.method'),
+                'expression_alteration.genes.allele_specific': gene_data['allele_specific'],
+                'expression_alteration.genes.altered_gene_symbol': gene_data['altered_gene_symbol'],
+                'expression_alteration.genes.target_gene_hgnc_id': gene_data['target_gene_hgnc_id'],
+                'expression_alteration.genes.targeted_genomic_region': gene_data['targeted_genomic_region'],
+                'expression_alteration.genes.expected_alteration_type': gene_data['expected_alteration_type'],
+                'expression_alteration.genes.editing_strategy': gene_data['editing_strategy'],
+                'expression_alteration.genes.altered_locus': gene_data['altered_locus'],
+                'expression_alteration.genes.guide_sequence': gene_data['guide_sequence'],
+                'Id': strategy_row.get('Id')
+            })
+
+        if not genes:
+            errors.append("No valid gene rows found in the gene tab.")
+            return [], df_filtered
+
+        # Construct strategy with gene list
+        strategy = ExpressionAlterationStrategy(
+            expression_alteration_id=label,
+            parent_protocol_id=strategy_row.get('expression_alteration.parent_protocol_id'),
+            method=strategy_row.get('expression_alteration.method'),
+            id=strategy_row.get('Id'),
+            genes=genes
+        )
+
+        expression_alterations_df = pd.DataFrame(flattened_records)
+        print("Parsed expression alterations:", len(flattened_records))
+        return [strategy], expression_alterations_df
+
     def get_cell_lines(self,
                        sheet_name,
                        action,
@@ -1330,6 +1456,24 @@ class SpreadsheetSubmitter:
     def get_expression_alterations(self,
                                    sheet_name,
                                    action,
-                                   errors):
-        expression_alterations, df_filtered = self.parse_expression_alteration(sheet_name, action, errors)
-        return expression_alterations, df_filtered
+                                   errors,
+                                   context=None):
+        """
+        Retrieves parsed expression alterations from the appropriate sheet(s) in the Excel file.
+
+        Parameters:
+            sheet_name (str): Name of the main expression alteration sheet.
+            action (str): Submission action (ADD, MODIFY, DELETE).
+            errors (list): A list to collect validation or parsing errors.
+            context (str, optional): Ingestion context to distinguish between formats.
+                                     e.g., 'pooled_differentiated' for MSK-style pooled datasets.
+
+        Returns:
+            Tuple[List[ExpressionAlterationStrategy], DataFrame]: Parsed strategies and cleaned DataFrame.
+        """
+        if context == 'pooled_differentiated':
+            print("Using pooled_differentiated parsing: augmenting expression alterations with gene-specific info "
+                  "from 'expression_alteration_genes' tab.")
+            return self.parse_expression_alteration_with_genes(sheet_name, action, errors)
+        else:
+            return self.parse_expression_alteration(sheet_name, action, errors)

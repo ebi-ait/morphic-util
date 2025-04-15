@@ -96,7 +96,6 @@ class CmdSubmitFile:
         # Read and store the context argument (if provided)
         # For UCSF datasets, you might pass --context unperturbed_multiple.
         self.context = getattr(args, "context", None)
-        print(f"-----Context: {self.context}")
 
         # Assign and validate required arguments
         self.action = self._get_required_arg('action', "Submission action (ADD, MODIFY or DELETE) is mandatory")
@@ -360,7 +359,8 @@ class CmdSubmitFile:
 
             # Parse different sections of the spreadsheet
             expression_alterations, expression_alterations_df = parser.get_expression_alterations(
-                'Expression alteration', self.action, self.validation_errors
+                'Expression alteration', self.action, self.validation_errors,
+                context=self.context
             )
 
             cell_lines, cell_lines_df, parent_cell_line_names = parser.get_cell_lines(
@@ -639,8 +639,43 @@ class CmdSubmitFile:
         """Save the updated dataframes and upload the results."""
         current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         output_file = f"submission_result_{current_time}.xlsx"
+
         try:
-            # List of updated DataFrames and corresponding sheet names
+            # Expand gene info if in pooled mode
+            if self.context == 'pooled_differentiated':
+                print("Expanding expression alteration strategies for pooled_differentiated mode...")
+                if expression_alteration_df is not None and not expression_alteration_df.empty:
+                    # Check if it's already flat
+                    if "expression_alteration.genes.altered_gene_symbol" in expression_alteration_df.columns:
+                        print("expression_alteration_df already flattened — skipping expansion.")
+                    else:
+                        expanded_rows = []
+                        for _, row in expression_alteration_df.iterrows():
+                            genes = row.get("genes", [])
+                            if isinstance(genes, list):
+                                for gene in genes:
+                                    expanded_rows.append({
+                                        'expression_alteration.label': row.get('expression_alteration.label'),
+                                        'expression_alteration.parent_protocol_id': row.get('expression_alteration.parent_protocol_id'),
+                                        'expression_alteration.method': row.get('expression_alteration.method'),
+                                        'expression_alteration.genes.allele_specific': gene.get('allele_specific'),
+                                        'expression_alteration.genes.altered_gene_symbol': gene.get('altered_gene_symbol'),
+                                        'expression_alteration.genes.target_gene_hgnc_id': gene.get('target_gene_hgnc_id'),
+                                        'expression_alteration.genes.targeted_genomic_region': gene.get('targeted_genomic_region'),
+                                        'expression_alteration.genes.expected_alteration_type': gene.get('expected_alteration_type'),
+                                        'expression_alteration.genes.editing_strategy': gene.get('editing_strategy'),
+                                        'expression_alteration.genes.altered_locus': gene.get('altered_locus'),
+                                        'expression_alteration.genes.guide_sequence': gene.get('guide_sequence'),
+                                        'Id': row.get('Id')
+                                    })
+                            else:
+                                print(f"Skipping row without gene list: {row}")
+                        expression_alteration_df = pd.DataFrame(expanded_rows)
+                else:
+                    print("expression_alteration_df is empty or None — no gene info expanded.")
+
+            print(f"Preparing submission result file: {output_file}")
+
             dataframes = [
                 (updated_dfs[0], cell_line_sheet_name),
                 (updated_dfs[1], differentiated_or_undifferentiated_cell_line_sheet_name),
@@ -649,18 +684,26 @@ class CmdSubmitFile:
                 (expression_alteration_df, 'Expression alteration strategy')
             ]
 
-            # Create the Excel file and write only non-null DataFrames
             with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
                 for df, sheet_name in dataframes:
-                    if df is not None:  # Check if the DataFrame is not None
-                        df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    if df is None:
+                        print(f"Skipping sheet '{sheet_name}' — DataFrame is None")
+                        continue
+                    if df.empty:
+                        print(f"Skipping sheet '{sheet_name}' — DataFrame is empty")
+                        continue
+                    print(f"Writing sheet '{sheet_name}' with shape {df.shape}")
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+
             if os.path.exists(output_file):
                 CmdUpload(self.aws, self.args).upload_file(self.dataset, output_file, os.path.basename(output_file))
                 print(f"File {output_file} uploaded successfully.")
             else:
                 raise FileNotFoundError(f"The output file {output_file} was not created or cannot be found.")
+
         except Exception as e:
-            print(f"Failed to upload file {output_file}. Error: {e}, Refer dataset {self.dataset} for tracing metadata")
+            print(f"Failed to upload file {output_file}. Error: {e}")
+            print(f"Refer to dataset '{self.dataset}' for metadata tracing.")
 
     def _delete_actions(self, submission_envelope_id, submission_instance, error=None):
         """Handle actions needed when a submission fails."""

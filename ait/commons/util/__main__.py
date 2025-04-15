@@ -92,7 +92,8 @@ def parse_args(args):
     parser_config.add_argument('--dataset', help='your dataset reference')
     parser_config.add_argument(
         '--context',
-        help="Optional context for ingestion (e.g. 'unperturbed_multiple' for UCSF mode). "
+        help="Optional context for ingestion (e.g. 'pooled_differentiated' for MSK pooled mode or "
+             "'unperturbed_multiple' for UCSF mode)."
              "If omitted, legacy behavior is used.",
         default=None
     )

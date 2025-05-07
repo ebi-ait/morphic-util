@@ -38,7 +38,8 @@ command:
   {config,submit,submit-file,create,select,list,upload,download,delete}
     config              configure AWS credentials
     submit              submit your study, dataset or biomaterials metadata (incomplete as all metadata types is not supported yet, expected to be completed on August 2024)
-    submit-file         submit your metadata file containing your cell lines, differentiated cell lines, library preparations and sequencing files
+    submit-file         submit your metadata file with cell lines, differentiated products, library preparations, sequencing files, 
+                        and optionally context-specific data (e.g., pooled or unperturbed experiments)    
     create              create an upload area (authorised users only)
     select              select or show the active upload area
     list                list contents of the area
@@ -99,11 +100,22 @@ Submit your study and dataset metadata and create your AWS upload area for uploa
 
 ```shell script
 positional arguments:
-$ morphic-util submit-file --file <PATH_TO_FILE> --action <SUBMISSION_ACTION> --dataset <the analyis which has generated the data and the metadata>
+$ morphic-util submit-file --file <PATH_TO_FILE> --action <SUBMISSION_ACTION> --dataset <the analyis which has generated the data and the metadata> [--context <CONTEXT>]
 
+positional arguments:
   --file         path to the file containing the metadata
   --action       ADD, MODIFY or DELETE based on the type of submission
   --dataset      the identifier for the analysis
+  
+optional arguments:
+  --context      optional ingestion context, e.g.:
+                   'pooled_differentiated' → for MSK pooled datasets
+                   'unperturbed_multiple' → for UCSF datasets
+                 If omitted, legacy behavior is used
+```
+Example usage:
+```shell script
+morphic-util submit-file --file my_file.xlsx --action ADD --dataset 67f8519e68005a3744c40fcf --context pooled_differentiated
 ```
 
 ## `create` command

@@ -89,10 +89,25 @@ Submit your study and dataset metadata and create your AWS upload area for uploa
 
 ```shell script
 positional arguments:
-$ morphic-util submit --type <TYPE> --file <PATH_TO_FILE>
+$ morphic-util submit --type <TYPE> --file <PATH_TO_FILE> [--study <STUDY_ID>] --dataset-type <DATASET_TYPE> [--derived-from <PARENT_IDS>]
 
-  --type         type of metadata being submitted (e.g. study or dataset)
-  --file         path to the file containing the metadata
+  Required:
+    --type: type of metadata being submitted (e.g. study or dataset)
+    --file: path to the file containing the metadata
+
+  Required for datasets:
+    --dataset-type: Dataset type (e.g., raw, filtered, processed, analysis)
+    
+  Conditionally required for datasets:
+    --derived-from: Comma-separated list of dataset IDs this dataset is derived from
+
+  Optional (for datasets):
+    --study: Link the dataset to an existing study
+   
+  Validation rules (for datasets):
+    raw: Must not include --derived-from
+    filtered, processed: Must be derived from a raw dataset
+    analysis: Must be derived from a processed dataset
 ```
 
 ## `submit-file` command
@@ -217,11 +232,17 @@ $ morphic-util submit --type study --file <PATH_TO_STUDY_METADATA_FILE>
 ### Create your dataset and link it to your study
 ```shell script
 positional arguments:
-$ morphic-util submit --type dataset --file <PATH_TO_DATASET_METADATA_FILE> --study <STUDY_ID>
-
+$ morphic-util submit --type dataset --file <PATH_TO_DATASET_METADATA_FILE> [--study <STUDY_ID>] [--dataset-type <TYPE>] [--derived-from <PARENT_IDS>]
   --type         type of metadata being submitted (here it is dataset)
   --file         path to the file containing the metadata (optional)
   --study        STUDY_ID obtained in the last step
+  --dataset-type: One of raw, filtered, processed, or analysis (required)
+  --derived-from: Comma-separated list of dataset IDs this dataset is derived from (required for all except raw)
+
+  Validation rules:
+    raw: Must not have --derived-from
+    filtered or processed: Must be derived from raw
+    analysis: Must be derived from one or more processed datasets
 ```
 ### `select` your upload area to upload your data files (the upload area name is same as your DATASET_ID)
 Show or select the data file upload area

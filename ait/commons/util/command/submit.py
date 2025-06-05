@@ -206,6 +206,8 @@ class CmdSubmit:
         self.access_token = get_profile('morphic-util').access_token
         self.type = getattr(self.args, 'type', None)
         self.file = getattr(self.args, 'file', None)
+        self.dataset_type = getattr(self.args, 'dataset_type', None)
+        self.derived_from = getattr(self.args, 'derived_from', None)
         self.provider_api = ProviderApi(self.BASE_URL)
 
     def run(self):
@@ -1108,6 +1110,31 @@ class CmdSubmit:
                         if link_to_study == 'yes':
                             study_id = input("Input study id: ").lower()
                             self.link_dataset_to_study(entity_id, study_id, access_token)
+
+                    if self.dataset_type:
+                        print(f"Assigning dataset type '{self.dataset_type}' to dataset ID '{entity_id}'...")
+                        self.provider_api.patch(
+                            f"{self.BASE_URL}/datasets/{entity_id}",
+                            access_token,
+                            {"datasetType": self.dataset_type}
+                        )
+                        print(f"Dataset '{entity_id}' successfully marked as type '{self.dataset_type}'.")
+
+                    # Validate and link derivedFrom
+                    if self.derived_from:
+                        derived_ids = [d.strip() for d in self.derived_from.split(",") if d.strip()]
+                        self._validate_dataset_type_and_lineage(
+                            entity_id, self.dataset_type, derived_ids, access_token
+                        )
+                        print(f"Establishing data lineage: '{entity_id}' is derived from → {derived_ids}")
+                        for source_id in derived_ids:
+                            print(f"   ↳ Linking '{entity_id}' ← derived from ← '{source_id}'...")
+                            self.provider_api.put(
+                                f"{self.BASE_URL}/datasets/{entity_id}/derivedFrom/{source_id}",
+                                access_token
+                            )
+                        print(f"Lineage successfully established for dataset '{entity_id}'.")
+
                 elif type == 'biomaterial':
                     if self.args.dataset is not None:
                         dataset_id = self.args.dataset
@@ -1129,6 +1156,47 @@ class CmdSubmit:
         else:
             print("Unsupported type")
         return False, "Unsupported type"
+
+    def _validate_dataset_type_and_lineage(self, dataset_id, dataset_type, derived_ids, access_token):
+        if not derived_ids:
+            if dataset_type in ['filtered', 'processed', 'analysis']:
+                raise SubmissionError([
+                    f"{dataset_type.capitalize()} datasets must be derived from other datasets."
+                ])
+            return
+
+        if dataset_type == "raw":
+            raise SubmissionError(["Raw datasets cannot be derived from other datasets."])
+
+        expected_parent_type = {
+            'filtered': 'raw',
+            'processed': 'raw',
+            'analysis': 'processed'
+        }.get(dataset_type)
+
+        if not expected_parent_type:
+            return
+
+        for source_id in derived_ids:
+            source_id = source_id.strip()
+            if source_id:
+                try:
+                    dataset_info = self.provider_api.get(
+                        f"{self.BASE_URL}/datasets/{source_id}",
+                        access_token
+                    )
+                    parent_type = dataset_info.get("datasetType")
+                    if parent_type != expected_parent_type:
+                        raise SubmissionError([
+                            f"\nDataset was created (ID: {dataset_id}), but derived-from validation failed.",
+                            f"{dataset_type.capitalize()} datasets must be derived from {expected_parent_type} datasets. "
+                            f"Found parent {source_id} of type {parent_type or 'unknown'}."
+                        ])
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code == 404:
+                        raise SubmissionError([f"Parent dataset '{source_id}' not found. Double-check the ID."])
+                    else:
+                        raise SubmissionError([f"Failed to validate parent dataset {source_id}: {str(e)}"])
 
     def create_new_envelope_and_submit_entity(self, input_entity_type, data, access_token):
         """

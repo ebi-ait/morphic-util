@@ -102,3 +102,6 @@ class ProviderApi:
 
     def post(self, url, data_type_in_hal_link, data, access_token):
         return self.request('POST', url, access_token, data=data, data_type_in_hal_link=data_type_in_hal_link)
+
+    def patch(self, url, access_token, data):
+        return self.request('PATCH', url, access_token, data=data)

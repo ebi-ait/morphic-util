@@ -79,12 +79,15 @@ def parse_args(args):
     parser_config.add_argument('PASSWORD', help='AWS Cognito password', nargs='?')
     parser_config.add_argument('--bucket', help='use BUCKET instead of default bucket')
 
-    parser_config = cmd_parser.add_parser('submit', help='submit your metadata')
-    parser_config.add_argument('--type', help='data type you are submitting, e.g. study, dataset')
-    parser_config.add_argument('--file', help='your metadata')
-    parser_config.add_argument('--study', help='your study reference')
-    parser_config.add_argument('--dataset', help='your dataset reference')
-    parser_config.add_argument('--process', help='your process/analysis reference')
+    parser_submit = cmd_parser.add_parser('submit', help='submit your metadata')
+    parser_submit.add_argument('--type', required=True, choices=['study', 'dataset'], help='data type you are submitting')
+    parser_submit.add_argument('--file', required=True, help='your metadata file path')
+    parser_submit.add_argument('--study', help='your study reference')
+    parser_submit.add_argument('--dataset', help='your dataset reference')
+    parser_submit.add_argument('--process', help='your process/analysis reference')
+    parser_submit.add_argument('--dataset-type', choices=['raw', 'processed', 'filtered', 'analysis'],
+                               help='dataset type (required if --type=dataset)')
+    parser_submit.add_argument('--derived-from', help='Comma-separated dataset IDs this dataset is derived from')
 
     parser_config = cmd_parser.add_parser('submit-file', help='submit your file containing your dataset metadata')
     parser_config.add_argument('--file', help='spreadsheet containing your dataset metadata')
@@ -179,6 +182,24 @@ def parse_args(args):
 def main():
     try:
         parsed_args = parse_args(sys.argv[1:])
+
+        if parsed_args.command == 'submit' and parsed_args.type == 'dataset':
+            if not parsed_args.dataset_type:
+                print("Error: --dataset-type is required when submitting a dataset", file=sys.stderr)
+                sys.exit(1)
+
+            if parsed_args.dataset_type == 'raw' and parsed_args.derived_from:
+                print("Error: --derived-from is not allowed for 'raw' datasets", file=sys.stderr)
+                sys.exit(1)
+
+            if parsed_args.dataset_type in ['processed', 'filtered'] and not parsed_args.derived_from:
+                print("Error: --derived-from is required for 'processed' or 'filtered' datasets", file=sys.stderr)
+                sys.exit(1)
+
+            if parsed_args.dataset_type == 'analysis' and not parsed_args.derived_from:
+                print("Error: --derived-from is required for 'analysis' datasets", file=sys.stderr)
+                sys.exit(1)
+
         Cmd(parsed_args)
     except KeyboardInterrupt:
         # If SIGINT is triggered whilst threads are active (upload/download) we kill the entire process to give the

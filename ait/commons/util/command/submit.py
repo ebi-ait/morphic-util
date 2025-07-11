@@ -2,6 +2,7 @@ import csv
 import traceback
 
 import requests
+from requests.exceptions import HTTPError
 import json
 import pandas as pd
 import numpy as np
@@ -11,6 +12,7 @@ from ait.commons.util.spreadsheet_util import SubmissionError
 from ait.commons.util.user_profile import get_profile
 from ait.commons.util.provider_api_util import ProviderApi
 
+import time
 
 def matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
     return expression_alteration.expression_alteration_id.replace(" ",
@@ -191,7 +193,7 @@ class CmdSubmit:
         transform(file): Transforms the input file to a JSON object.
         put_to_provider_api(url, access_token): Sends a PUT request to the provider API.
     """
-    BASE_URL = 'https://api.ingest.dev.archive.morphic.bio/'
+    BASE_URL = 'https://api.ingest.archive.morphic.bio/'
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
@@ -242,6 +244,27 @@ class CmdSubmit:
         Returns:
         - cell_line_entity_id: Entity ID of the submitted or modified cell line biomaterial.
         """
+        if cell_line.id and action.lower() != 'modify':
+                print(f"Re-using existing clonal cell line "
+                      f"'{cell_line.biomaterial_id}' ({cell_line.id})")
+
+                # keep the spreadsheet in sync
+                update_dataframe(cell_lines_df,
+                                 cell_line.id,
+                                 cell_line.biomaterial_id,
+                                 'clonal_cell_line.label')
+
+                # make sure the biomaterial is linked to the current dataset
+                self.link_to_dataset('biomaterial', dataset_id, cell_line.id, access_token)
+
+                # (re-)link to its expression-alteration process if necessary
+                if expression_alterations:
+                    self.link_cell_line_with_expression_alterations(
+                        access_token, cell_line, cell_line.id, expression_alterations
+                    )
+                return cell_line.id
+
+
         if action.lower() == 'modify':
             try:
                 success = self.patch_entity('biomaterial', cell_line.id, cell_line.to_dict(), access_token)
@@ -1120,6 +1143,9 @@ class CmdSubmit:
                         )
                         print(f"Dataset '{entity_id}' successfully marked as type '{self.dataset_type}'.")
 
+                        # Optional: wait briefly or re-fetch to avoid version mismatch
+                        time.sleep(0.2)
+
                     # Validate and link derivedFrom
                     if self.derived_from:
                         derived_ids = [d.strip() for d in self.derived_from.split(",") if d.strip()]
@@ -1129,7 +1155,7 @@ class CmdSubmit:
                         print(f"Establishing data lineage: '{entity_id}' is derived from → {derived_ids}")
                         for source_id in derived_ids:
                             print(f"   ↳ Linking '{entity_id}' ← derived from ← '{source_id}'...")
-                            self.provider_api.put(
+                            self.provider_api._put_with_retry(
                                 f"{self.BASE_URL}/datasets/{entity_id}/derivedFrom/{source_id}",
                                 access_token
                             )
@@ -1197,6 +1223,24 @@ class CmdSubmit:
                         raise SubmissionError([f"Parent dataset '{source_id}' not found. Double-check the ID."])
                     else:
                         raise SubmissionError([f"Failed to validate parent dataset {source_id}: {str(e)}"])
+
+    def _put_with_retry(self, url, access_token, retries=3, delay=0.3):
+        for attempt in range(retries):
+            try:
+                response = self.provider_api.put(url, access_token)
+                if response.status_code // 100 == 2:
+                    return True
+                elif response.status_code == 409:
+                    print(f"Conflict detected. Retrying... ({attempt+1}/{retries})")
+                    time.sleep(delay)
+                else:
+                    response.raise_for_status()
+            except Exception as e:
+                if attempt == retries - 1:
+                    print(f"PUT failed: {url} — {str(e)}")
+                    raise
+                time.sleep(delay)
+        return False
 
     def create_new_envelope_and_submit_entity(self, input_entity_type, data, access_token):
         """
@@ -1335,19 +1379,26 @@ class CmdSubmit:
 
         print(f"Biomaterial linked successfully to dataset: {dataset_id}")
 
+    import time
+
     def link_biomaterial_to_process(self, biomaterial_id, process_id, access_token):
         """
-        Links a biomaterial to a process.
-
-        Parameters:
-            biomaterial_id (str): The ID of the biomaterial.
-            process_id (str): The ID of the process.
-            access_token (str): Access token for authorization.
+        Links a biomaterial to a process with retry logic on 409 Conflict.
         """
         print(f"Linking biomaterial {biomaterial_id} to process {process_id}")
-
         url = f"{self.BASE_URL}/biomaterials/{biomaterial_id}/inputToProcesses"
-        self.perform_hal_linkage(url, process_id, 'processes', access_token)
+
+        for attempt in range(3):
+            try:
+                self.perform_hal_linkage(url, process_id, 'processes', access_token)
+                return  # success
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 409:
+                    print(f"Conflict (409) when linking biomaterial to process. Retrying attempt {attempt + 1}/3...")
+                    time.sleep(0.5)
+                else:
+                    raise  # rethrow for anything else
+        raise RuntimeError(f"Failed to link biomaterial {biomaterial_id} to process {process_id} after retries.")
 
     def delete_submission(self, submission_envelope_id, access_token, force_delete=False):
         """
@@ -1394,8 +1445,11 @@ class CmdSubmit:
         response = requests.post(url, headers=headers, data=f"{self.BASE_URL}/{link_to}/{input_id}")
 
         if response.status_code != 200:
-            raise Exception(f"Failed to link biomaterial to process {input_id}. "
-                            f"Status code: {response.status_code}, Response: {response.text}")
+                # Raise with response attached for retry logic to inspect
+                http_error = HTTPError(f"Failed to link biomaterial to process {input_id}. "
+                                       f"Status code: {response.status_code}, Response: {response.text}")
+                http_error.response = response
+                raise http_error
         else:
             print("Linkage successful")
 

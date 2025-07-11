@@ -4,6 +4,7 @@ import pandas as pd
 import json
 import numpy as np
 import json
+import requests
 
 """
 class MissingMandatoryFieldError(Exception):
@@ -121,6 +122,30 @@ class CellLine:
                 content["wt_control_status"] = self.wt_control_status
             return {"content": content}
 
+    @classmethod
+    def from_existing(cls, existing):
+        content = existing.get("content", {})
+
+        # The database id you need is either in 'id' or in the self HAL link
+        db_id = (
+            existing.get("id") or
+            get_entity_id_from_hal_link(existing["_links"]["self"]["href"])
+        )
+
+        return cls(
+            biomaterial_id              = content.get("label"),
+            description                 = content.get("description"),
+            parental_cell_line_name     = content.get("parental_cell_line_name"),
+            clone_id                    = content.get("clone_id"),
+            protocol_id                 = content.get("cell_line_generation_protocol"),
+            zygosity                    = content.get("zygosity"),
+            cell_type                   = content.get("type"),
+            treatment_condition         = content.get("treatment_condition"),
+            wt_control_status           = content.get("wt_control_status"),
+            expression_alteration_id    = None,      # keep setter logic in handle_cell_line
+            id                          = db_id,     # <— store the **ObjectId**, not the UUID
+            parental_only               = False
+        )
 
 class ExpressionAlterationStrategy:
     def __init__(self,
@@ -655,6 +680,16 @@ def process_library_preparations(cell_lines, differentiated_cell_lines, library_
     if library_preps_for_diff:
         merge_differentiated_cell_line_and_library_preparation_for_lp(differentiated_cell_lines, library_preps_for_diff, errors)
 
+def find_existing_biomaterial_by_label(label, ingest_api_base):
+    url = f"{ingest_api_base}/biomaterials/search/findByContentLabel?label={label}"
+    print(f"Find_existing_biomaterial_by_label URL '{url}'")
+    response = requests.get(url)
+    print(f"Find_existing_biomaterial_by_label response '{response}'")
+    if response.status_code == 200:
+        results = response.json()
+        biomaterials = results.get("_embedded", {}).get("biomaterials", [])
+        return biomaterials[0] if biomaterials else None
+    return None
 
 class SpreadsheetSubmitter:
     """
@@ -783,6 +818,20 @@ class SpreadsheetSubmitter:
         for _, row in df_filtered.iterrows():
             label = row['clonal_cell_line.label']
             parent_name = row.get('clonal_cell_line.parental_cell_line_name')
+
+            print(f"Examining clonal cell line '{label}'")
+            existing = find_existing_biomaterial_by_label(label, ingest_api_base="https://api.ingest.archive.morphic.bio")
+
+            if existing:
+                print(f"Reusing existing clonal cell line '{label}'")
+                cell_line = CellLine.from_existing(existing)
+                # Update expression alteration ID if it's provided in the spreadsheet
+                ea_id = row.get('expression_alteration.label')
+                if ea_id:
+                    cell_line.expression_alteration_id = ea_id
+                cell_lines.append(cell_line)
+                continue
+
             cell_lines.append(
                 CellLine(
                     biomaterial_id=label,

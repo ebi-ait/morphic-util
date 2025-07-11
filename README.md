@@ -60,6 +60,16 @@ Use the tool by specifying a command (`cmd` - see list below) to run, any mandat
 and `ARG2` - see positional args for each command), and any optional arguments (e.g. `-o1` and `o2` - see options for
 each command).
 
+### What’s new
+
+**Automatic clonal-cell-line reuse** – if a clonal cell-line label in your
+spreadsheet already exists in the ingest database, `morphic-util` will detect
+it and link to the existing record instead of creating a duplicate.
+
+**Configurable ingest endpoint** – set the environment variable
+`INGEST_API_BASE` in `spreadsheet_util.py:parse_cell_lines` (defaults to `https://api.ingest.archive.morphic.bio`) to
+target a different ingest deployment without editing code.
+
 ## Commands
 
 Help with specific command:

@@ -10,10 +10,10 @@ from ait.commons.util.command.list import CmdList
 from ait.commons.util.command.submit import CmdSubmit, get_entity_id_from_hal_link, create_new_submission_envelope
 from ait.commons.util.command.upload import CmdUpload
 from ait.commons.util.user_profile import get_profile
-from ait.commons.util.provider_api_util import APIProvider
+from ait.commons.util.provider_api_util import ProviderApi
 from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter, ValidationError, \
     merge_library_preparation_sequencing_file, merge_cell_line_and_differentiated_cell_line, \
-    merge_differentiated_cell_line_and_library_preparation, SubmissionError
+    merge_differentiated_cell_line_and_library_preparation, SubmissionError, process_library_preparations
 
 
 # Define a class for handling submission of a command file
@@ -65,7 +65,7 @@ def _create_expression_alterations(submission_instance,
             .astype(object))
         expression_alterations_df.loc[
             expression_alterations_df[
-                'expression_alteration_id'] == expression_alteration.expression_alteration_id,
+                'expression_alteration.label'] == expression_alteration.expression_alteration_id,
             expression_alterations_entity_id_column_name
         ] = expression_alteration_id
 
@@ -73,7 +73,7 @@ def _create_expression_alterations(submission_instance,
 
 
 class CmdSubmitFile:
-    BASE_URL = 'http://localhost:8080'
+    BASE_URL = 'https://api.ingest.dev.archive.morphic.bio/'
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
@@ -88,10 +88,14 @@ class CmdSubmitFile:
         self.user_profile = get_profile('morphic-util')
         self.access_token = self.user_profile.access_token
         self.aws = Aws(self.user_profile)
-        self.provider_api = APIProvider(self.BASE_URL)
+        self.provider_api = ProviderApi(self.BASE_URL)
         self.validation_errors = []
         self.submission_errors = []
         self.submission_envelope_id = None
+
+        # Read and store the context argument (if provided)
+        # For UCSF datasets, you might pass --context unperturbed_multiple.
+        self.context = getattr(args, "context", None)
 
         # Assign and validate required arguments
         self.action = self._get_required_arg('action', "Submission action (ADD, MODIFY or DELETE) is mandatory")
@@ -100,6 +104,14 @@ class CmdSubmitFile:
             "Please submit your study using the submit option, register your dataset using "
             "the submit option, and link your dataset to your study before proceeding with this submission."
         ))
+
+        if self.dataset:
+            try:
+                self.provider_api.get(f"{self.BASE_URL}/datasets/{self.dataset}",
+                                      self.access_token)
+            except Exception as e:
+                print(f"Dataset does not exist {self.dataset}")
+                sys.exit(1)
 
         # Validate file argument only if action is not DELETE
         if self.action != 'DELETE':
@@ -178,7 +190,7 @@ class CmdSubmitFile:
             # Extract parsed data
             expression_alterations = parsed_data['expression_alterations']
             expression_alterations_df = parsed_data['expression_alterations_df']
-            parent_cell_line_name = parsed_data['parent_cell_line_name']
+            parent_cell_line_names = parsed_data['parent_cell_line_names']
             cell_lines = parsed_data['cell_lines']
             cell_lines_df = parsed_data['cell_lines_df']
             differentiated_cell_lines = parsed_data['differentiated_cell_lines']
@@ -208,28 +220,28 @@ class CmdSubmitFile:
 
             if self._is_add_action():
                 self._create_submission_envelope()
-                parent_cell_line_id = self._handle_parent_cell_line(submission_instance,
-                                                                    parent_cell_line_name)
-                created_expression_alterations = self._handle_expression_alterations(
-                    submission_instance,
-                    expression_alterations,
-                    expression_alterations_df,
-                    parent_cell_line_name,
-                    parent_cell_line_id
-                )
 
             if cell_lines and cell_lines_df is not None:
+                if self._is_add_action():
+                    created_expression_alterations = self._handle_expression_alterations(
+                        submission_instance,
+                        expression_alterations,
+                        expression_alterations_df,
+                        parent_cell_line_names,
+                        cell_lines
+                    )
+
                 created_cell_lines = self._create_cell_lines(
                     submission_instance, cell_lines, cell_lines_df, created_expression_alterations)
 
             if differentiated_cell_lines and differentiated_cell_lines_df is not None:
                 created_differentiated_or_undifferentiated_cell_lines = self._create_differentiated_cell_lines(
-                    submission_instance, differentiated_cell_lines, differentiated_cell_lines_df)
+                    submission_instance, differentiated_cell_lines, differentiated_cell_lines_df, differentiated)
 
             if (undifferentiated_cell_lines and undifferentiated_cell_lines_df is not None
                     and not differentiated):
                 created_differentiated_or_undifferentiated_cell_lines = self._create_differentiated_cell_lines(
-                    submission_instance, undifferentiated_cell_lines, undifferentiated_cell_lines_df)
+                    submission_instance, undifferentiated_cell_lines, undifferentiated_cell_lines_df, differentiated)
 
             if library_preparations and library_preparations_df is not None:
                 created_library_preparations = self._create_library_preparations(
@@ -286,8 +298,8 @@ class CmdSubmitFile:
                                        submission_instance,
                                        expression_alterations,
                                        expression_alterations_df,
-                                       parent_cell_line_name,
-                                       parent_cell_line_id):
+                                       parent_cell_line_names,
+                                       cell_lines):
         """Handles the creation of expression alterations and links them to the parent cell line if needed."""
         created_expression_alterations = []
 
@@ -296,14 +308,15 @@ class CmdSubmitFile:
                 submission_instance, expression_alterations, expression_alterations_df
             )
 
-        if created_expression_alterations and parent_cell_line_id:
-            self._link_parent_cell_line_expression_alteration(
-                submission_instance,
-                self.access_token,
-                parent_cell_line_name,
-                parent_cell_line_id,
-                created_expression_alterations
-            )
+        if created_expression_alterations:
+            for parent_cell_line_name in parent_cell_line_names:
+                self._link_parent_cell_line_expression_alteration(
+                    submission_instance,
+                    self.access_token,
+                    parent_cell_line_name,
+                    cell_lines,
+                    created_expression_alterations
+                )
 
         return created_expression_alterations
 
@@ -346,11 +359,12 @@ class CmdSubmitFile:
 
             # Parse different sections of the spreadsheet
             expression_alterations, expression_alterations_df = parser.get_expression_alterations(
-                'Expression alteration strategy', self.action, self.validation_errors
+                'Expression alteration', self.action, self.validation_errors,
+                context=self.context
             )
 
-            cell_lines, cell_lines_df, parent_cell_line_name = parser.get_cell_lines(
-                cell_line_sheet_name, self.action, self.validation_errors
+            cell_lines, cell_lines_df, parent_cell_line_names = parser.get_cell_lines(
+                cell_line_sheet_name, self.action, self.validation_errors, context=self.context
             )
 
             if differentiated_cell_line_sheet_name:
@@ -372,25 +386,40 @@ class CmdSubmitFile:
             if differentiated_cell_lines:
                 differentiated = True
                 merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines,
-                                                             self.validation_errors)
+                                                             self.validation_errors, context=self.context)
 
             if undifferentiated_cell_lines and not differentiated:
                 merge_cell_line_and_differentiated_cell_line(cell_lines, undifferentiated_cell_lines,
-                                                             self.validation_errors)
+                                                             self.validation_errors, context=self.context)
 
-            library_preparations, library_preparations_df = parser.get_library_preparations(
-                'Library preparation', self.action, self.validation_errors
-            )
+            library_preparations_result = parser.get_library_preparations(
+                'Library preparation', differentiated, self.action, self.validation_errors)
+
+            if not isinstance(library_preparations_result, tuple) or len(library_preparations_result) != 2:
+                raise ValueError("Unexpected return from get_library_preparations()")
+
+            library_preparations, library_preparations_df = library_preparations_result
+
+            # Handle N:1 relationships for differentiated products in library preparation
+            for lp in library_preparations:
+                if "differentiated_biomaterial_id" in lp.__dict__:
+                    differentiated_ids = lp.differentiated_biomaterial_id.split("|")
+                    lp.differentiated_biomaterial_id = differentiated_ids
 
             if differentiated_cell_lines:
-                merge_differentiated_cell_line_and_library_preparation(
-                    differentiated_cell_lines, library_preparations, self.validation_errors
-                )
-
-            if undifferentiated_cell_lines and not differentiated:
-                merge_differentiated_cell_line_and_library_preparation(
-                    undifferentiated_cell_lines, library_preparations, self.validation_errors
-                )
+                if self.context == "unperturbed_multiple":
+                    # Use the new processing that creates a LP process and links the clone and differentiated product
+                    process_library_preparations(cell_lines, differentiated_cell_lines, library_preparations, self.validation_errors)
+                else:
+                    # Use the original merge function for differentiated cell lines (for MSK, JAX, etc.)
+                    merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
+                                                                           library_preparations, self.validation_errors, cell_lines=cell_lines)
+            elif undifferentiated_cell_lines and not differentiated:
+                if self.context == "unperturbed_multiple":
+                    process_library_preparations(cell_lines, undifferentiated_cell_lines, library_preparations, self.validation_errors)
+                else:
+                    merge_differentiated_cell_line_and_library_preparation(undifferentiated_cell_lines,
+                                                                           library_preparations, self.validation_errors, cell_lines=cell_lines)
 
             sequencing_files, sequencing_files_df = parser.get_sequencing_files(
                 'Sequence file', self.action, self.validation_errors
@@ -404,7 +433,7 @@ class CmdSubmitFile:
                 "expression_alterations_df": expression_alterations_df,
                 "cell_lines": cell_lines,
                 "cell_lines_df": cell_lines_df,
-                "parent_cell_line_name": parent_cell_line_name,
+                "parent_cell_line_names": parent_cell_line_names,
                 "differentiated_cell_lines": differentiated_cell_lines,
                 "differentiated_cell_lines_df": differentiated_cell_lines_df,
                 "undifferentiated_cell_lines": undifferentiated_cell_lines,
@@ -418,24 +447,26 @@ class CmdSubmitFile:
                 "differentiated_cell_line_sheet_name": differentiated_cell_line_sheet_name,
                 "undifferentiated_cell_line_sheet_name": undifferentiated_cell_line_sheet_name
             }
-        except Exception:
+        except Exception as e:
+            print(f"Exception occurred:", e)
+
             self.validation_errors.append(f"Spreadsheet is invalid {self.file}")
             return None
 
     def _validate_and_upload(self, parsed_data, list_of_files_in_upload_area):
-        """
         # Validate the parsed data and upload the file.
+        """
         validate_sequencing_files(parsed_data['sequencing_files'], list_of_files_in_upload_area, self.dataset,
                                   self.validation_errors)
         """
         """
            Handle validation errors, including interacting with the user in case of a missing sheet.
-           """
+        """
         try:
             # Exit now if there are validation errors in the spreadsheet
             if self.validation_errors:
                 raise ValidationError(self.validation_errors)
-        except ValidationError as e:
+        except ValidationError:
             # Check if the error is related to a missing sheet
             missing_sheet_errors = [msg for msg in self.validation_errors if "Missing sheet" in msg]
 
@@ -443,13 +474,15 @@ class CmdSubmitFile:
                 # Extract the sheet name(s) from the errors
                 missing_sheets = ', '.join([msg.split("'")[1] for msg in missing_sheet_errors])
                 # Ask the user whether to proceed
+                """
                 user_response = input(
                     f"A required sheet '{missing_sheets}' is missing. Do you want to proceed anyway? (yes/no): ").strip().lower()
                 if user_response == 'yes':
                     print("Proceeding with execution...")
                 else:
-                    print("Execution terminated due to missing required sheet.")
-                    sys.exit(1)
+                """
+                print("Execution terminated due to missing required sheet.")
+                sys.exit(1)
             else:
                 # Print the error message
                 # print(f"Validation Error: {e.errors}")
@@ -517,11 +550,13 @@ class CmdSubmitFile:
     def _create_differentiated_cell_lines(self,
                                           submission_instance,
                                           differentiated_cell_lines,
-                                          differentiated_cell_lines_df):
+                                          differentiated_cell_lines_df,
+                                          differentiated):
         for differentiated_cell_line in differentiated_cell_lines:
             differentiated_cell_line_entity_id = submission_instance.handle_differentiated_cell_line(None,
                                                                                                      differentiated_cell_line,
                                                                                                      differentiated_cell_lines_df,
+                                                                                                     differentiated,
                                                                                                      self.submission_envelope_id,
                                                                                                      self.dataset,
                                                                                                      self.access_token,
@@ -590,7 +625,8 @@ class CmdSubmitFile:
             self.dataset,
             self.access_token,
             self.action,
-            self.submission_errors
+            self.submission_errors,
+            context=self.context
         )
 
         return updated_dfs, message
@@ -603,8 +639,43 @@ class CmdSubmitFile:
         """Save the updated dataframes and upload the results."""
         current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         output_file = f"submission_result_{current_time}.xlsx"
+
         try:
-            # List of updated DataFrames and corresponding sheet names
+            # Expand gene info if in pooled mode
+            if self.context == 'pooled_differentiated':
+                print("Expanding expression alteration strategies for pooled_differentiated mode...")
+                if expression_alteration_df is not None and not expression_alteration_df.empty:
+                    # Check if it's already flat
+                    if "expression_alteration.genes.altered_gene_symbol" in expression_alteration_df.columns:
+                        print("expression_alteration_df already flattened — skipping expansion.")
+                    else:
+                        expanded_rows = []
+                        for _, row in expression_alteration_df.iterrows():
+                            genes = row.get("genes", [])
+                            if isinstance(genes, list):
+                                for gene in genes:
+                                    expanded_rows.append({
+                                        'expression_alteration.label': row.get('expression_alteration.label'),
+                                        'expression_alteration.parent_protocol_id': row.get('expression_alteration.parent_protocol_id'),
+                                        'expression_alteration.method': row.get('expression_alteration.method'),
+                                        'expression_alteration.genes.allele_specific': gene.get('allele_specific'),
+                                        'expression_alteration.genes.altered_gene_symbol': gene.get('altered_gene_symbol'),
+                                        'expression_alteration.genes.target_gene_hgnc_id': gene.get('target_gene_hgnc_id'),
+                                        'expression_alteration.genes.targeted_genomic_region': gene.get('targeted_genomic_region'),
+                                        'expression_alteration.genes.expected_alteration_type': gene.get('expected_alteration_type'),
+                                        'expression_alteration.genes.editing_strategy': gene.get('editing_strategy'),
+                                        'expression_alteration.genes.altered_locus': gene.get('altered_locus'),
+                                        'expression_alteration.genes.guide_sequence': gene.get('guide_sequence'),
+                                        'Id': row.get('Id')
+                                    })
+                            else:
+                                print(f"Skipping row without gene list: {row}")
+                        expression_alteration_df = pd.DataFrame(expanded_rows)
+                else:
+                    print("expression_alteration_df is empty or None — no gene info expanded.")
+
+            print(f"Preparing submission result file: {output_file}")
+
             dataframes = [
                 (updated_dfs[0], cell_line_sheet_name),
                 (updated_dfs[1], differentiated_or_undifferentiated_cell_line_sheet_name),
@@ -613,18 +684,26 @@ class CmdSubmitFile:
                 (expression_alteration_df, 'Expression alteration strategy')
             ]
 
-            # Create the Excel file and write only non-null DataFrames
             with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
                 for df, sheet_name in dataframes:
-                    if df is not None:  # Check if the DataFrame is not None
-                        df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    if df is None:
+                        print(f"Skipping sheet '{sheet_name}' — DataFrame is None")
+                        continue
+                    if df.empty:
+                        print(f"Skipping sheet '{sheet_name}' — DataFrame is empty")
+                        continue
+                    print(f"Writing sheet '{sheet_name}' with shape {df.shape}")
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+
             if os.path.exists(output_file):
                 CmdUpload(self.aws, self.args).upload_file(self.dataset, output_file, os.path.basename(output_file))
                 print(f"File {output_file} uploaded successfully.")
             else:
                 raise FileNotFoundError(f"The output file {output_file} was not created or cannot be found.")
+
         except Exception as e:
-            print(f"Failed to upload file {output_file}. Error: {e}, Refer dataset {self.dataset} for tracing metadata")
+            print(f"Failed to upload file {output_file}. Error: {e}")
+            print(f"Refer to dataset '{self.dataset}' for metadata tracing.")
 
     def _delete_actions(self, submission_envelope_id, submission_instance, error=None):
         """Handle actions needed when a submission fails."""
@@ -666,12 +745,17 @@ class CmdSubmitFile:
                                                      submission_instance,
                                                      access_token,
                                                      parent_cell_line_name,
-                                                     parent_cell_line_id,
+                                                     cell_lines,
                                                      created_expression_alterations):
-        for expression_alteration in created_expression_alterations:
-            print(f"Linking parent cell line {parent_cell_line_name} "
-                  f"as input to process of {expression_alteration.expression_alteration_id}")
-            submission_instance.perform_hal_linkage(
-                f"{self.BASE_URL}/biomaterials/{parent_cell_line_id}/inputToProcesses",
-                expression_alteration.id, 'processes', access_token
-            )
+        parent_cell_line_id = self._handle_parent_cell_line(submission_instance, parent_cell_line_name)
+
+        for cell_line in cell_lines:
+            if cell_line.parental_cell_line_name == parent_cell_line_name:
+                for expression_alteration in created_expression_alterations:
+                    if cell_line.expression_alteration_id == expression_alteration.expression_alteration_id:
+                        print(f"Expression alteration match found, Linking parent cell line {parent_cell_line_name} "
+                              f"as input to process of {expression_alteration.expression_alteration_id}")
+                        submission_instance.perform_hal_linkage(
+                            f"{self.BASE_URL}/biomaterials/{parent_cell_line_id}/inputToProcesses",
+                            expression_alteration.id, 'processes', access_token
+                        )

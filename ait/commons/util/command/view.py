@@ -1,5 +1,5 @@
 from ait.commons.util.aws_client import Aws
-from ait.commons.util.provider_api_util import APIProvider
+from ait.commons.util.provider_api_util import ProviderApi
 from ait.commons.util.user_profile import get_profile
 
 
@@ -10,7 +10,7 @@ class CmdView:
         self.args = args
         self.access_token = get_profile('morphic-util').access_token
         self.user_profile = get_profile('morphic-util')
-        self.provider_api = APIProvider(self.base_url)
+        self.provider_api = ProviderApi(self.base_url)
 
         if hasattr(self.args, 'dataset') and self.args.dataset is not None:
             self.dataset = self.args.dataset

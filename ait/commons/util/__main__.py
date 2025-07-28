@@ -79,17 +79,27 @@ def parse_args(args):
     parser_config.add_argument('PASSWORD', help='AWS Cognito password', nargs='?')
     parser_config.add_argument('--bucket', help='use BUCKET instead of default bucket')
 
-    parser_config = cmd_parser.add_parser('submit', help='submit your metadata')
-    parser_config.add_argument('--type', help='data type you are submitting, e.g. study, dataset')
-    parser_config.add_argument('--file', help='your metadata')
-    parser_config.add_argument('--study', help='your study reference')
-    parser_config.add_argument('--dataset', help='your dataset reference')
-    parser_config.add_argument('--process', help='your process/analysis reference')
+    parser_submit = cmd_parser.add_parser('submit', help='submit your metadata')
+    parser_submit.add_argument('--type', required=True, choices=['study', 'dataset'], help='data type you are submitting')
+    parser_submit.add_argument('--file', required=True, help='your metadata file path')
+    parser_submit.add_argument('--study', help='your study reference')
+    parser_submit.add_argument('--dataset', help='your dataset reference')
+    parser_submit.add_argument('--process', help='your process/analysis reference')
+    parser_submit.add_argument('--dataset-type', choices=['raw', 'processed', 'filtered', 'analysis'],
+                               help='dataset type (required if --type=dataset)')
+    parser_submit.add_argument('--derived-from', help='Comma-separated dataset IDs this dataset is derived from')
 
     parser_config = cmd_parser.add_parser('submit-file', help='submit your file containing your dataset metadata')
     parser_config.add_argument('--file', help='spreadsheet containing your dataset metadata')
     parser_config.add_argument('--action', help='action you want to perform (ADD/MODIFY/DELETE')
     parser_config.add_argument('--dataset', help='your dataset reference')
+    parser_config.add_argument(
+        '--context',
+        help="Optional context for ingestion (e.g. 'pooled_differentiated' for MSK pooled mode or "
+             "'unperturbed_multiple' for UCSF mode)."
+             "If omitted, legacy behavior is used.",
+        default=None
+    )
 
     parser_config = cmd_parser.add_parser('view', help='view your dataset')
     parser_config.add_argument('--dataset', help='your dataset reference')
@@ -113,7 +123,8 @@ def parse_args(args):
     # parser_clear.add_argument('-a', action='store_true', help='clear all - selection and known dirs')
 
     parser_list = cmd_parser.add_parser('list', help='list contents of the area')
-    parser_list.add_argument('-b', action='store_true', help='list all areas in the S3 bucket (authorised users only)')
+    parser_list.add_argument('-processing', action='store_true', help='access the processed data (authorised users '
+                                                                      'only)')
 
     # parser_upload = cmd_parser.add_parser('upload', help='upload files to the area')
     # group_upload = parser_upload.add_mutually_exclusive_group(required=True)
@@ -143,7 +154,8 @@ def parse_args(args):
     group_delete.add_argument('-d', action='store_true', help='delete upload area and contents (authorised users only)')
 
     parser_sync = cmd_parser.add_parser('sync',
-                                        help='copy data from selected upload area to ingest upload area (authorised users only)')
+                                        help='copy data from selected upload area to ingest upload area (authorised '
+                                             'users only)')
     parser_sync.add_argument('INGEST_UPLOAD_AREA', help='Ingest upload area', type=valid_ingest_upload_area)
 
     ps = [parser]
@@ -170,6 +182,24 @@ def parse_args(args):
 def main():
     try:
         parsed_args = parse_args(sys.argv[1:])
+
+        if parsed_args.command == 'submit' and parsed_args.type == 'dataset':
+            if not parsed_args.dataset_type:
+                print("Error: --dataset-type is required when submitting a dataset", file=sys.stderr)
+                sys.exit(1)
+
+            if parsed_args.dataset_type == 'raw' and parsed_args.derived_from:
+                print("Error: --derived-from is not allowed for 'raw' datasets", file=sys.stderr)
+                sys.exit(1)
+
+            if parsed_args.dataset_type in ['processed', 'filtered'] and not parsed_args.derived_from:
+                print("Error: --derived-from is required for 'processed' or 'filtered' datasets", file=sys.stderr)
+                sys.exit(1)
+
+            if parsed_args.dataset_type == 'analysis' and not parsed_args.derived_from:
+                print("Error: --derived-from is required for 'analysis' datasets", file=sys.stderr)
+                sys.exit(1)
+
         Cmd(parsed_args)
     except KeyboardInterrupt:
         # If SIGINT is triggered whilst threads are active (upload/download) we kill the entire process to give the

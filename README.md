@@ -38,7 +38,8 @@ command:
   {config,submit,submit-file,create,select,list,upload,download,delete}
     config              configure AWS credentials
     submit              submit your study, dataset or biomaterials metadata (incomplete as all metadata types is not supported yet, expected to be completed on August 2024)
-    submit-file         submit your metadata file containing your cell lines, differentiated cell lines, library preparations and sequencing files
+    submit-file         submit your metadata file with cell lines, differentiated products, library preparations, sequencing files, 
+                        and optionally context-specific data (e.g., pooled or unperturbed experiments)    
     create              create an upload area (authorised users only)
     select              select or show the active upload area
     list                list contents of the area
@@ -58,6 +59,16 @@ $ morphic-util cmd ARG1 ARG2 -o1 -o2
 Use the tool by specifying a command (`cmd` - see list below) to run, any mandatory (positional) arguments (e.g. `ARG1`
 and `ARG2` - see positional args for each command), and any optional arguments (e.g. `-o1` and `o2` - see options for
 each command).
+
+### What’s new
+
+**Automatic clonal-cell-line reuse** – if a clonal cell-line label in your
+spreadsheet already exists in the ingest database, `morphic-util` will detect
+it and link to the existing record instead of creating a duplicate.
+
+**Configurable ingest endpoint** – set the environment variable
+`INGEST_API_BASE` in `spreadsheet_util.py:parse_cell_lines` (defaults to `https://api.ingest.archive.morphic.bio`) to
+target a different ingest deployment without editing code.
 
 ## Commands
 
@@ -88,10 +99,25 @@ Submit your study and dataset metadata and create your AWS upload area for uploa
 
 ```shell script
 positional arguments:
-$ morphic-util submit --type <TYPE> --file <PATH_TO_FILE>
+$ morphic-util submit --type <TYPE> --file <PATH_TO_FILE> [--study <STUDY_ID>] --dataset-type <DATASET_TYPE> [--derived-from <PARENT_IDS>]
 
-  --type         type of metadata being submitted (e.g. study or dataset)
-  --file         path to the file containing the metadata
+  Required:
+    --type: type of metadata being submitted (e.g. study or dataset)
+    --file: path to the file containing the metadata
+
+  Required for datasets:
+    --dataset-type: Dataset type (e.g., raw, filtered, processed, analysis)
+    
+  Conditionally required for datasets:
+    --derived-from: Comma-separated list of dataset IDs this dataset is derived from
+
+  Optional (for datasets):
+    --study: Link the dataset to an existing study
+   
+  Validation rules (for datasets):
+    raw: Must not include --derived-from
+    filtered, processed: Must be derived from a raw dataset
+    analysis: Must be derived from a processed dataset
 ```
 
 ## `submit-file` command
@@ -99,11 +125,22 @@ Submit your study and dataset metadata and create your AWS upload area for uploa
 
 ```shell script
 positional arguments:
-$ morphic-util submit-file --file <PATH_TO_FILE> --action <SUBMISSION_ACTION> --dataset <the analyis which has generated the data and the metadata>
+$ morphic-util submit-file --file <PATH_TO_FILE> --action <SUBMISSION_ACTION> --dataset <the analyis which has generated the data and the metadata> [--context <CONTEXT>]
 
+positional arguments:
   --file         path to the file containing the metadata
   --action       ADD, MODIFY or DELETE based on the type of submission
   --dataset      the identifier for the analysis
+  
+optional arguments:
+  --context      optional ingestion context, e.g.:
+                   'pooled_differentiated' → for MSK pooled datasets
+                   'unperturbed_multiple' → for UCSF datasets
+                 If omitted, legacy behavior is used
+```
+Example usage:
+```shell script
+morphic-util submit-file --file my_file.xlsx --action ADD --dataset 67f8519e68005a3744c40fcf --context pooled_differentiated
 ```
 
 ## `create` command
@@ -205,11 +242,17 @@ $ morphic-util submit --type study --file <PATH_TO_STUDY_METADATA_FILE>
 ### Create your dataset and link it to your study
 ```shell script
 positional arguments:
-$ morphic-util submit --type dataset --file <PATH_TO_DATASET_METADATA_FILE> --study <STUDY_ID>
-
+$ morphic-util submit --type dataset --file <PATH_TO_DATASET_METADATA_FILE> [--study <STUDY_ID>] [--dataset-type <TYPE>] [--derived-from <PARENT_IDS>]
   --type         type of metadata being submitted (here it is dataset)
   --file         path to the file containing the metadata (optional)
   --study        STUDY_ID obtained in the last step
+  --dataset-type: One of raw, filtered, processed, or analysis (required)
+  --derived-from: Comma-separated list of dataset IDs this dataset is derived from (required for all except raw)
+
+  Validation rules:
+    raw: Must not have --derived-from
+    filtered or processed: Must be derived from raw
+    analysis: Must be derived from one or more processed datasets
 ```
 ### `select` your upload area to upload your data files (the upload area name is same as your DATASET_ID)
 Show or select the data file upload area

@@ -2,6 +2,7 @@ import csv
 import traceback
 
 import requests
+from requests.exceptions import HTTPError
 import json
 import pandas as pd
 import numpy as np
@@ -9,8 +10,9 @@ from urllib.parse import urlparse
 
 from ait.commons.util.spreadsheet_util import SubmissionError
 from ait.commons.util.user_profile import get_profile
-from ait.commons.util.provider_api_util import APIProvider
+from ait.commons.util.provider_api_util import ProviderApi
 
+import time
 
 def matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
     return expression_alteration.expression_alteration_id.replace(" ",
@@ -191,7 +193,7 @@ class CmdSubmit:
         transform(file): Transforms the input file to a JSON object.
         put_to_provider_api(url, access_token): Sends a PUT request to the provider API.
     """
-    BASE_URL = 'http://localhost:8080'
+    BASE_URL = 'https://api.ingest.archive.morphic.bio/'
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
@@ -206,7 +208,9 @@ class CmdSubmit:
         self.access_token = get_profile('morphic-util').access_token
         self.type = getattr(self.args, 'type', None)
         self.file = getattr(self.args, 'file', None)
-        self.provider_api = APIProvider(self.BASE_URL)
+        self.dataset_type = getattr(self.args, 'dataset_type', None)
+        self.derived_from = getattr(self.args, 'derived_from', None)
+        self.provider_api = ProviderApi(self.BASE_URL)
 
     def run(self):
         """
@@ -240,13 +244,34 @@ class CmdSubmit:
         Returns:
         - cell_line_entity_id: Entity ID of the submitted or modified cell line biomaterial.
         """
+        if cell_line.id and action.lower() != 'modify':
+                print(f"Re-using existing clonal cell line "
+                      f"'{cell_line.biomaterial_id}' ({cell_line.id})")
+
+                # keep the spreadsheet in sync
+                update_dataframe(cell_lines_df,
+                                 cell_line.id,
+                                 cell_line.biomaterial_id,
+                                 'clonal_cell_line.label')
+
+                # make sure the biomaterial is linked to the current dataset
+                self.link_to_dataset('biomaterial', dataset_id, cell_line.id, access_token)
+
+                # (re-)link to its expression-alteration process if necessary
+                if expression_alterations:
+                    self.link_cell_line_with_expression_alterations(
+                        access_token, cell_line, cell_line.id, expression_alterations
+                    )
+                return cell_line.id
+
+
         if action.lower() == 'modify':
             try:
                 success = self.patch_entity('biomaterial', cell_line.id, cell_line.to_dict(), access_token)
                 if success:
                     print(f"Updated cell line: {cell_line.id} / {cell_line.biomaterial_id}")
                     update_dataframe(cell_lines_df, cell_line.id, cell_line.biomaterial_id,
-                                     'cell_line.biomaterial_core.biomaterial_id')
+                                     'clonal_cell_line.label')
                     return cell_line.id
                 else:
                     errors.append(f"Failed to update cell line: {cell_line.id} / {cell_line.biomaterial_id}")
@@ -259,7 +284,7 @@ class CmdSubmit:
                 cell_line_entity_id = self.create_cell_line_entity(cell_line, expression_alterations,
                                                                    submission_envelope_id, dataset_id, access_token)
                 update_dataframe(cell_lines_df, cell_line_entity_id, cell_line.biomaterial_id,
-                                 'cell_line.biomaterial_core.biomaterial_id')
+                                 'clonal_cell_line.label')
                 return cell_line_entity_id
             except Exception as e:
                 errors.append(f"Failed to create cell line: {cell_line.biomaterial_id}")
@@ -323,6 +348,7 @@ class CmdSubmit:
                                         cell_line_entity_id,
                                         differentiated_cell_line,
                                         differentiated_cell_lines_df,
+                                        differentiated,
                                         submission_envelope_id,
                                         dataset_id,
                                         access_token,
@@ -350,9 +376,15 @@ class CmdSubmit:
                     print(f"Updated differentiated cell line: {differentiated_cell_line.id} / "
                           f"{differentiated_cell_line.biomaterial_id}")
 
-                    update_dataframe(differentiated_cell_lines_df, differentiated_cell_line.id,
-                                     differentiated_cell_line.biomaterial_id,
-                                     'differentiated_cell_line.biomaterial_core.biomaterial_id')
+                    if differentiated:
+                        update_dataframe(differentiated_cell_lines_df, differentiated_cell_line.id,
+                                         differentiated_cell_line.biomaterial_id,
+                                         'differentiated_product.label')
+                    else:
+                        update_dataframe(differentiated_cell_lines_df, differentiated_cell_line.id,
+                                         differentiated_cell_line.biomaterial_id,
+                                         'undifferentiated_product.label')
+
                     return differentiated_cell_line.id
                 else:
                     errors.append(f"Failed to update differentiated cell line: {differentiated_cell_line.id} / "
@@ -370,12 +402,19 @@ class CmdSubmit:
                                                                                           dataset_id,
                                                                                           differentiated_cell_line,
                                                                                           submission_envelope_id)
-                update_dataframe(differentiated_cell_lines_df, differentiated_cell_line_id,
-                                 differentiated_cell_line.biomaterial_id,
-                                 'differentiated_cell_line.biomaterial_core.biomaterial_id')
+
+                if differentiated:
+                    update_dataframe(differentiated_cell_lines_df, differentiated_cell_line_id,
+                                     differentiated_cell_line.biomaterial_id,
+                                     'differentiated_product.label')
+                else:
+                    update_dataframe(differentiated_cell_lines_df, differentiated_cell_line_id,
+                                     differentiated_cell_line.biomaterial_id,
+                                     'undifferentiated_product.label')
                 return differentiated_cell_line_id
             except Exception as e:
-                errors.append(f"Failed to create differentiated cell line: {differentiated_cell_line.biomaterial_id}")
+                errors.append(
+                    f"Failed to create differentiated/undifferentiated cell line: {differentiated_cell_line.biomaterial_id}")
                 raise SubmissionError(errors, e)
 
     def create_differentiated_cell_line_entity(self,
@@ -552,7 +591,7 @@ class CmdSubmit:
 
                     update_dataframe(library_preparations_df, library_preparation.id,
                                      library_preparation.biomaterial_id,
-                                     'library_preparation.biomaterial_core.biomaterial_id')
+                                     'library_preparation.label')
                     return library_preparation.id
                 else:
                     errors.append(f"Failed to update library preparation biomaterial: {library_preparation.id} / "
@@ -570,7 +609,7 @@ class CmdSubmit:
                                                                                        submission_envelope_id)
                 update_dataframe(library_preparations_df, library_preparation_entity_id,
                                  library_preparation.biomaterial_id,
-                                 'library_preparation.biomaterial_core.biomaterial_id')
+                                 'library_preparation.label')
 
                 return library_preparation_entity_id
             except Exception as e:
@@ -743,7 +782,7 @@ class CmdSubmit:
 
                     update_dataframe(sequencing_file_df, sequencing_file.id,
                                      sequencing_file.file_name,
-                                     'sequence_file.file_core.file_name')
+                                     'sequence_file.label')
                     return sequencing_file.id
                 else:
                     errors.append(
@@ -761,7 +800,7 @@ class CmdSubmit:
                                                                                submission_envelope_id)
                 update_dataframe(sequencing_file_df, sequencing_file_entity_id,
                                  sequencing_file.file_name,
-                                 'sequence_file.file_core.file_name')
+                                 'sequence_file.label')
 
                 return sequencing_file_entity_id
             except Exception as e:
@@ -895,11 +934,125 @@ class CmdSubmit:
 
         return process_entity_id
 
+    def _link_cell_lines_to_children(self, cell_lines, child_lines, dataset_id, submission_envelope_id, access_token, action, errors):
+        """
+        Link each cell line to its corresponding differentiated/undifferentiated children.
+        Uses the 'input_biomaterial_id' attribute if present; otherwise, falls back to 'cell_line_biomaterial_id'.
+        """
+        print("Linking cell lines with their differentiated/undifferentiated children.")
+        for cl in cell_lines:
+            for child in child_lines:
+                # Use 'input_biomaterial_id' if available; otherwise, use 'cell_line_biomaterial_id'
+                child_id = getattr(child, "input_biomaterial_id", None) or child.cell_line_biomaterial_id
+                if cl.biomaterial_id == child_id:
+                    print(f"Linking cell line {cl.biomaterial_id} to child {child.biomaterial_id}.")
+                    self.link_cell_line_and_differentiated_cell_line(
+                        access_token,
+                        cl,
+                        child,
+                        dataset_id,
+                        submission_envelope_id,
+                        action,
+                        errors
+                    )
+
+    def _process_library_preparations(self, cell_lines, diff_lines, library_preps, dataset_id, submission_envelope_id, access_token, action, errors, context):
+        """
+        Process library preparations and link them to cell lines using different logic based on context.
+
+        If context=="unperturbed_multiple":
+          - For each target in the library preparation (which is ensured to be a list),
+            check first for clones (cell lines with a non-null clone_id) and link via
+            link_clone_to_library_preparation_process.
+          - If no clone is found, then check for a matching differentiated cell line
+            and link via link_differentiated_and_library_preparation.
+
+        Otherwise, use legacy exact matching.
+        """
+        print("Processing library preparations for linking.")
+        for lp in library_preps:
+            targets = lp.differentiated_biomaterial_id
+            if not isinstance(targets, list):
+                targets = [targets]
+            if context == "unperturbed_multiple":
+                # New behavior: try matching clones first, then differentiated cell lines.
+                for target in targets:
+                    linked = False
+                    # Check among clones (cell lines with non-null clone_id)
+                    for cl in cell_lines:
+                        if cl.clone_id is not None and cl.biomaterial_id == target:
+                            print(f"LP {lp.biomaterial_id}: target {target} matches clone {cl.biomaterial_id}.")
+                            self.link_clone_to_library_preparation_process(
+                                cl,
+                                lp,
+                                dataset_id,
+                                submission_envelope_id,
+                                access_token,
+                                action,
+                                errors
+                            )
+                            linked = True
+                    # If no clone match found, check among differentiated/parental cell lines.
+                    if not linked:
+                        for diff in diff_lines:
+                            if diff.biomaterial_id == target:
+                                print(f"LP {lp.biomaterial_id}: target {target} matches differentiated cell line {diff.biomaterial_id}.")
+                                self.link_differentiated_and_library_preparation(
+                                    access_token,
+                                    diff,
+                                    lp,
+                                    dataset_id,
+                                    submission_envelope_id,
+                                    action,
+                                    errors
+                                )
+                                linked = True
+                                break
+                    if not linked:
+                        err_msg = f"LP {lp.biomaterial_id}: target ID {target} not found among cell lines."
+                        print(err_msg)
+                        errors.append(err_msg)
+            else:
+                # Legacy behavior (e.g. for MSK/JAX): exact matching.
+                for target in targets:
+                    for diff in diff_lines:
+                        if diff.biomaterial_id == target:
+                            print(f"(Legacy) LP {lp.biomaterial_id}: target {target} matches differentiated cell line {diff.biomaterial_id}.")
+                            self.link_differentiated_and_library_preparation(
+                                access_token,
+                                diff,
+                                lp,
+                                dataset_id,
+                                submission_envelope_id,
+                                action,
+                                errors
+                            )
+
+    def _link_sequencing_files(self, library_preps, sequencing_files, dataset_id, submission_envelope_id, access_token, action, errors):
+        """
+        Link each sequencing file with its corresponding library preparation.
+        """
+        print("Linking sequencing files to library preparations.")
+        for lp in library_preps:
+            for sf in sequencing_files:
+                # Match using the (updated) library preparation biomaterial ID
+                if lp.biomaterial_id == sf.library_preparation_id:
+                    print(f"Linking sequencing file {sf.file_name} with LP {lp.biomaterial_id}.")
+                    self.link_library_preparation_and_sequencing_file(
+                        access_token,
+                        lp,
+                        sf,
+                        dataset_id,
+                        submission_envelope_id,
+                        action,
+                        errors
+                    )
+
     def establish_links(self,
                         cell_lines,
                         cell_lines_df,
-                        differentiated_or_undifferentiated_cell_lines,
-                        differentiated_or_undifferentiated_cell_lines_df,
+                        diff_or_undiff_cell_lines,
+                        diff_or_undiff_cell_lines_df,
                         library_preparations,
                         library_preparations_df,
                         sequencing_files,
@@ -908,7 +1061,8 @@ class CmdSubmit:
                         dataset_id,
                         access_token,
                         action,
-                        errors):
+                        errors,
+                        context=None):
         """
         Handles the submission of multiple types of biomaterials (cell lines,
         differentiated cell lines, library preparations)
@@ -923,58 +1077,33 @@ class CmdSubmit:
         - submission_envelope_id: ID of the submission envelope where entities will be linked.
         - access_token: Access token for authentication and authorization.
 
+        The linking behavior for library preparations depends on the 'context' parameter:
+          - If context is "unperturbed_multiple", the new behavior is used.
+          - Otherwise, legacy behavior (exact matching) is applied.
+
         Returns:
         - Tuple containing updated DataFrames and a status message.
         """
+        print("Starting establish_links process.")
         try:
-            for cell_line in cell_lines:
-                for differentiated_or_undifferentiated_cell_line in differentiated_or_undifferentiated_cell_lines:
-                    if cell_line.biomaterial_id == differentiated_or_undifferentiated_cell_line.input_biomaterial_id:
-                        self.link_cell_line_and_differentiated_cell_line(access_token,
-                                                                         cell_line,
-                                                                         differentiated_or_undifferentiated_cell_line,
-                                                                         dataset_id,
-                                                                         submission_envelope_id,
-                                                                         action,
-                                                                         errors)
-            for differentiated_or_undifferentiated_cell_line in differentiated_or_undifferentiated_cell_lines:
-                for library_preparation in library_preparations:
-                    if differentiated_or_undifferentiated_cell_line.biomaterial_id == library_preparation.differentiated_biomaterial_id:
-                        self.link_differentiated_and_library_preparation(
-                            access_token,
-                            differentiated_or_undifferentiated_cell_line,
-                            library_preparation,
-                            dataset_id,
-                            submission_envelope_id,
-                            action,
-                            errors)
+            # 1. Link cell lines with their differentiated/undifferentiated children.
+            self._link_cell_lines_to_children(cell_lines, diff_or_undiff_cell_lines, dataset_id, submission_envelope_id, access_token, action, errors)
 
-            for library_preparation in library_preparations:
-                for sequencing_file in sequencing_files:
-                    if library_preparation.biomaterial_id == sequencing_file.library_preparation_id:
-                        self.link_library_preparation_and_sequencing_file(access_token,
-                                                                          library_preparation,
-                                                                          sequencing_file,
-                                                                          dataset_id,
-                                                                          submission_envelope_id,
-                                                                          action,
-                                                                          errors)
+            # 2. Process library preparations based on the provided context.
+            self._process_library_preparations(cell_lines, diff_or_undiff_cell_lines, library_preparations, dataset_id, submission_envelope_id, access_token, action, errors, context)
+
+            # 3. Link sequencing files to library preparations.
+            self._link_sequencing_files(library_preparations, sequencing_files, dataset_id, submission_envelope_id, access_token, action, errors)
 
             message = 'SUCCESS'
+            print("establish_links completed successfully.")
         except Exception as e:
             message = f"An error occurred: {str(e)}"
             errors.append(message)
+            print(message)
             raise SubmissionError(message, e)
-            # Set DataFrames to None in case of an error
-            # cell_lines_df = None
-            # differentiated_cell_lines_df = None
-            # library_preparations_df = None
-            # sequencing_files_df = None
 
-        return ([cell_lines_df,
-                 differentiated_or_undifferentiated_cell_lines_df,
-                 library_preparations_df,
-                 sequencing_files_df], message)
+        return ([cell_lines_df, diff_or_undiff_cell_lines_df, library_preparations_df, sequencing_files_df], message)
 
     def typed_submission(self, type, file, access_token):
         """
@@ -1004,6 +1133,34 @@ class CmdSubmit:
                         if link_to_study == 'yes':
                             study_id = input("Input study id: ").lower()
                             self.link_dataset_to_study(entity_id, study_id, access_token)
+
+                    if self.dataset_type:
+                        print(f"Assigning dataset type '{self.dataset_type}' to dataset ID '{entity_id}'...")
+                        self.provider_api.patch(
+                            f"{self.BASE_URL}/datasets/{entity_id}",
+                            access_token,
+                            {"datasetType": self.dataset_type}
+                        )
+                        print(f"Dataset '{entity_id}' successfully marked as type '{self.dataset_type}'.")
+
+                        # Optional: wait briefly or re-fetch to avoid version mismatch
+                        time.sleep(0.2)
+
+                    # Validate and link derivedFrom
+                    if self.derived_from:
+                        derived_ids = [d.strip() for d in self.derived_from.split(",") if d.strip()]
+                        self._validate_dataset_type_and_lineage(
+                            entity_id, self.dataset_type, derived_ids, access_token
+                        )
+                        print(f"Establishing data lineage: '{entity_id}' is derived from → {derived_ids}")
+                        for source_id in derived_ids:
+                            print(f"   ↳ Linking '{entity_id}' ← derived from ← '{source_id}'...")
+                            self.provider_api._put_with_retry(
+                                f"{self.BASE_URL}/datasets/{entity_id}/derivedFrom/{source_id}",
+                                access_token
+                            )
+                        print(f"Lineage successfully established for dataset '{entity_id}'.")
+
                 elif type == 'biomaterial':
                     if self.args.dataset is not None:
                         dataset_id = self.args.dataset
@@ -1025,6 +1182,65 @@ class CmdSubmit:
         else:
             print("Unsupported type")
         return False, "Unsupported type"
+
+    def _validate_dataset_type_and_lineage(self, dataset_id, dataset_type, derived_ids, access_token):
+        if not derived_ids:
+            if dataset_type in ['filtered', 'processed', 'analysis']:
+                raise SubmissionError([
+                    f"{dataset_type.capitalize()} datasets must be derived from other datasets."
+                ])
+            return
+
+        if dataset_type == "raw":
+            raise SubmissionError(["Raw datasets cannot be derived from other datasets."])
+
+        expected_parent_type = {
+            'filtered': 'raw',
+            'processed': 'raw',
+            'analysis': 'processed'
+        }.get(dataset_type)
+
+        if not expected_parent_type:
+            return
+
+        for source_id in derived_ids:
+            source_id = source_id.strip()
+            if source_id:
+                try:
+                    dataset_info = self.provider_api.get(
+                        f"{self.BASE_URL}/datasets/{source_id}",
+                        access_token
+                    )
+                    parent_type = dataset_info.get("datasetType")
+                    if parent_type != expected_parent_type:
+                        raise SubmissionError([
+                            f"\nDataset was created (ID: {dataset_id}), but derived-from validation failed.",
+                            f"{dataset_type.capitalize()} datasets must be derived from {expected_parent_type} datasets. "
+                            f"Found parent {source_id} of type {parent_type or 'unknown'}."
+                        ])
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code == 404:
+                        raise SubmissionError([f"Parent dataset '{source_id}' not found. Double-check the ID."])
+                    else:
+                        raise SubmissionError([f"Failed to validate parent dataset {source_id}: {str(e)}"])
+
+    def _put_with_retry(self, url, access_token, retries=3, delay=0.3):
+        for attempt in range(retries):
+            try:
+                response = self.provider_api.put(url, access_token)
+                if response.status_code // 100 == 2:
+                    return True
+                elif response.status_code == 409:
+                    print(f"Conflict detected. Retrying... ({attempt+1}/{retries})")
+                    time.sleep(delay)
+                else:
+                    response.raise_for_status()
+            except Exception as e:
+                if attempt == retries - 1:
+                    print(f"PUT failed: {url} — {str(e)}")
+                    raise
+                time.sleep(delay)
+        return False
 
     def create_new_envelope_and_submit_entity(self, input_entity_type, data, access_token):
         """
@@ -1163,19 +1379,26 @@ class CmdSubmit:
 
         print(f"Biomaterial linked successfully to dataset: {dataset_id}")
 
+    import time
+
     def link_biomaterial_to_process(self, biomaterial_id, process_id, access_token):
         """
-        Links a biomaterial to a process.
-
-        Parameters:
-            biomaterial_id (str): The ID of the biomaterial.
-            process_id (str): The ID of the process.
-            access_token (str): Access token for authorization.
+        Links a biomaterial to a process with retry logic on 409 Conflict.
         """
         print(f"Linking biomaterial {biomaterial_id} to process {process_id}")
-
         url = f"{self.BASE_URL}/biomaterials/{biomaterial_id}/inputToProcesses"
-        self.perform_hal_linkage(url, process_id, 'processes', access_token)
+
+        for attempt in range(3):
+            try:
+                self.perform_hal_linkage(url, process_id, 'processes', access_token)
+                return  # success
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 409:
+                    print(f"Conflict (409) when linking biomaterial to process. Retrying attempt {attempt + 1}/3...")
+                    time.sleep(0.5)
+                else:
+                    raise  # rethrow for anything else
+        raise RuntimeError(f"Failed to link biomaterial {biomaterial_id} to process {process_id} after retries.")
 
     def delete_submission(self, submission_envelope_id, access_token, force_delete=False):
         """
@@ -1222,8 +1445,11 @@ class CmdSubmit:
         response = requests.post(url, headers=headers, data=f"{self.BASE_URL}/{link_to}/{input_id}")
 
         if response.status_code != 200:
-            raise Exception(f"Failed to link biomaterial to process {input_id}. "
-                            f"Status code: {response.status_code}, Response: {response.text}")
+                # Raise with response attached for retry logic to inspect
+                http_error = HTTPError(f"Failed to link biomaterial to process {input_id}. "
+                                       f"Status code: {response.status_code}, Response: {response.text}")
+                http_error.response = response
+                raise http_error
         else:
             print("Linkage successful")
 
@@ -1281,5 +1507,46 @@ class CmdSubmit:
             print(f"Deleting {data_file}")
             self.provider_api.delete(f"{self.BASE_URL}/files/{data_file}", access_token)
 
-        print(f"\nDeleting the dataset: {dataset}")
-        self.provider_api.delete(f"{self.BASE_URL}/datasets/{dataset}", access_token)
+        # print(f"\nDeleting the dataset: {dataset}")
+        # self.provider_api.delete(f"{self.BASE_URL}/datasets/{dataset}", access_token)
+
+    def link_clone_to_library_preparation_process(self, cell_line, library_preparation, dataset_id,
+                                                  submission_envelope_id, access_token, action, errors):
+        """
+        For a clonal cell line (one with a non-null clone_id), this method creates a library preparation process,
+        then links the clone as input and the existing library preparation biomaterial as derived by the process.
+        This function only makes the two necessary HAL linkage calls (inputToProcesses and derivedByProcesses)
+        without creating additional child/parent biomaterial links.
+
+        Returns:
+            process_entity_id (str): The ID of the created library preparation process.
+        """
+        import logging
+        logging.debug(
+            f"Starting LP process linking for clone {cell_line.biomaterial_id} and LP biomaterial {library_preparation.id}")
+        try:
+            # Create the library preparation process.
+            process_entity_id = self.create_process(
+                access_token,
+                dataset_id,
+                get_process_content('library_preparation'),
+                submission_envelope_id
+            )
+            logging.debug(f"Library preparation process created: {process_entity_id}")
+
+            # Link the clone as input to the process.
+            input_url = f"{self.BASE_URL}/biomaterials/{cell_line.id}/inputToProcesses"
+            self.perform_hal_linkage(input_url, process_entity_id, 'processes', access_token)
+            logging.debug(f"Linked clone {cell_line.biomaterial_id} as input to process {process_entity_id}")
+
+            # Link the existing LP biomaterial as derived by the process.
+            derived_url = f"{self.BASE_URL}/biomaterials/{library_preparation.id}/derivedByProcesses"
+            self.perform_hal_linkage(derived_url, process_entity_id, 'processes', access_token)
+            logging.debug(f"Linked LP biomaterial {library_preparation.id} as derived by process {process_entity_id}")
+
+            return process_entity_id
+        except Exception as e:
+            error_msg = f"Failed to link clone {cell_line.biomaterial_id} to LP process: {e}"
+            logging.error(error_msg)
+            errors.append(error_msg)
+            raise SubmissionError(errors, e)

@@ -1,7 +1,26 @@
+import time
 import requests
+from requests.exceptions import ConnectionError, Timeout
 
 
-class APIProvider:
+def request_with_retries(method, url, headers, params=None, json_data=None, retries=3, timeout=30):
+    """
+    Helper function that attempts an HTTP request with retries and an exponential backoff.
+    """
+    for attempt in range(retries):
+        try:
+            response = requests.request(method, url, headers=headers, params=params, json=json_data, timeout=timeout)
+            return response
+        except (ConnectionError, Timeout) as e:
+            if attempt < retries - 1:
+                wait = 2 ** attempt  # exponential backoff
+                print(f"Request failed (attempt {attempt + 1}/{retries}). Retrying in {wait} seconds...")
+                time.sleep(wait)
+            else:
+                raise e
+
+
+class ProviderApi:
     def __init__(self, base_url):
         self.base_url = base_url
 
@@ -46,32 +65,26 @@ class APIProvider:
             'Authorization': f'Bearer {access_token}'
         }
 
-        # Send the HTTP request
-        response = requests.request(method, url, headers=headers, params=params, json=data)
+        # Use our helper with retries and a 30-second timeout.
+        response = request_with_retries(method, url, headers, params=params, json_data=data, retries=3, timeout=30)
         status_code = response.status_code
 
-        # Check for unsuccessful status codes
         if status_code not in (200, 201, 202, 204):
             print(f"Received {status_code} while executing {method} on {url}")
-
             if method == 'DELETE':
-                # Return None for unsuccessful DELETE requests
                 return None
             else:
-                # Raise an exception for other unsuccessful requests
+                # This raises the HTTPError
                 raise response.raise_for_status()
         else:
             print(f"Received {status_code} while executing {method} on {url}")
-        # Handle POST requests with data_type_in_hal_link
+
         if method == 'POST' and data_type_in_hal_link:
             response_data = response.json()
-            # Return the URL from the HAL link in the response
             return response_data['_links'][data_type_in_hal_link]['href']
         elif method == 'DELETE':
-            # Return the status code for DELETE requests
             return status_code
         else:
-            # Return the JSON-parsed response data for other successful requests
             return response.json()
 
     def put(self, url, access_token):
@@ -89,3 +102,6 @@ class APIProvider:
 
     def post(self, url, data_type_in_hal_link, data, access_token):
         return self.request('POST', url, access_token, data=data, data_type_in_hal_link=data_type_in_hal_link)
+
+    def patch(self, url, access_token, data):
+        return self.request('PATCH', url, access_token, data=data)

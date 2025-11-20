@@ -8,6 +8,7 @@ from ait.commons.util.bucket_policy import ALLOWED_PERMS, DEFAULT_PERMS
 from ait.commons.util.cmd import Cmd
 from ait.commons.util.common import is_valid_project_name, is_valid_uuid, INGEST_UPLOAD_AREA_PREFIX
 from ait.commons.util.settings import DEFAULT_PROFILE, DEBUG_MODE, NAME, VERSION, DIR_SUPPORT
+from ait.commons.util.storage.globus_backend import GlobusStorage, _load_globus_config, _save_globus_config
 
 
 def valid_project_name(string):
@@ -78,6 +79,21 @@ def parse_args(args):
     parser_config.add_argument('USERNAME', help='AWS Cognito username', nargs='?')
     parser_config.add_argument('PASSWORD', help='AWS Cognito password', nargs='?')
     parser_config.add_argument('--bucket', help='use BUCKET instead of default bucket')
+
+    parser_config_globus = cmd_parser.add_parser(
+        'config-globus',
+        help='configure your Globus source endpoint (the collection where your files live)'
+    )
+    parser_config_globus.add_argument(
+        '--src-collection-uuid',
+        required=True,
+        help='Your source Globus Collection UUID (e.g. your Globus Connect Personal endpoint)'
+    )
+
+    parser_config_login = cmd_parser.add_parser(
+        'config-login',
+        help='authenticate with Globus and store a refresh token'
+    )
 
     parser_submit = cmd_parser.add_parser('submit', help='submit your metadata')
     parser_submit.add_argument('--type', required=True, choices=['study', 'dataset'], help='data type you are submitting')
@@ -153,6 +169,8 @@ def parse_args(args):
     group_delete.add_argument('-a', action='store_true', help='delete all files from the area')
     group_delete.add_argument('-d', action='store_true', help='delete upload area and contents (authorised users only)')
 
+    parser_delete.add_argument('-g', '--globus', action='store_true', dest='g', help='Use the Globus-backed Provider API for deletion (Asynchronous).')
+
     parser_sync = cmd_parser.add_parser('sync',
                                         help='copy data from selected upload area to ingest upload area (authorised '
                                              'users only)')
@@ -182,6 +200,24 @@ def parse_args(args):
 def main():
     try:
         parsed_args = parse_args(sys.argv[1:])
+
+        if parsed_args.command == 'config-login':
+            gs = GlobusStorage()
+            _ = gs.tc  # triggers interactive login if needed
+            print("✓ Globus login completed and refresh token stored.")
+            return
+
+        if parsed_args.command == 'config-globus':
+            cfg = _load_globus_config()
+
+            # Only user-provided bit:
+            cfg['src_collection_uuid'] = parsed_args.src_collection_uuid
+
+            # Everything else (ebi_collection_uuid, dest_root, api_url, api_key)
+            # stays as-is or comes from defaults/env inside _load_globus_config.
+            _save_globus_config(cfg)
+            print("✓ Saved Globus source collection UUID in ~/.morphic-util/config.json")
+            return
 
         if parsed_args.command == 'submit' and parsed_args.type == 'dataset':
             if not parsed_args.dataset_type:

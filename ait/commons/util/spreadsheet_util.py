@@ -820,7 +820,7 @@ class SpreadsheetSubmitter:
             parent_name = row.get('clonal_cell_line.parental_cell_line_name')
 
             print(f"Examining clonal cell line '{label}'")
-            existing = find_existing_biomaterial_by_label(label, ingest_api_base="https://api.ingest.archive.morphic.bio")
+            existing = find_existing_biomaterial_by_label(label, ingest_api_base="https://api.ingest.dev.archive.morphic.bio")
 
             if existing:
                 print(f"Reusing existing clonal cell line '{label}'")

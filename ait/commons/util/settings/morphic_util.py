@@ -1,7 +1,7 @@
 from pathlib import Path
 
 NAME = 'morphic-util'
-VERSION = '1.0.5-PROD'
+VERSION = '1.0.5'
 DESC = 'CLI tool for submitting your analysis data and metadata'
 AUTHOR = 'dgupta'
 AUTHOR_EMAIL = 'dgupta@ebi.ac.uk'
@@ -32,6 +32,12 @@ S3_REGION = 'us-east-1'
 LOCAL_STATE_FILE = USER_HOME + '/.hca-util'
 
 # Cognito and IAM
+# COGNITO_MORPHIC_UTIL_ADMIN = 'morphic-admin'
+# COGNITO_CLIENT_ID = '6poq2i04qt3pj5rkpg51patcrk'
+# COGNITO_IDENTITY_POOL_ID = 'eu-west-2:87ba188b-51fc-42e0-9172-a1a01cda8ed0'
+# COGNITO_USER_POOL_ID = 'eu-west-2_2BpGQDRSU'
+# IAM_USER = 'morphic-admin'
+
 COGNITO_MORPHIC_UTIL_ADMIN = 'morphic-dev-admin'
 COGNITO_CLIENT_ID = '1rfis94rvnden5elmocospd256'
 COGNITO_IDENTITY_POOL_ID = 'eu-west-2:d6531e9c-020d-4ee8-bf3b-255393c500e9'

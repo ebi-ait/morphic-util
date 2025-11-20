@@ -5,7 +5,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from ait.commons.util.aws_client import Aws
+from ait.commons.util.storage.factory import build_storage
 from ait.commons.util.command.list import CmdList
 from ait.commons.util.command.submit import CmdSubmit, get_entity_id_from_hal_link, create_new_submission_envelope
 from ait.commons.util.command.upload import CmdUpload
@@ -87,7 +87,7 @@ class CmdSubmitFile:
         self.args = args
         self.user_profile = get_profile('morphic-util')
         self.access_token = self.user_profile.access_token
-        self.aws = Aws(self.user_profile)
+        self.storage = build_storage(self.user_profile)
         self.provider_api = ProviderApi(self.BASE_URL)
         self.validation_errors = []
         self.submission_errors = []
@@ -177,7 +177,7 @@ class CmdSubmitFile:
 
     def _list_files_in_upload_area(self):
         """List files in the upload area."""
-        list_instance = CmdList(self.aws, self.args)
+        list_instance = CmdList(self.storage, self.args)
         return list_instance.list_bucket_contents_and_return(self.dataset, '')
 
     def _process_submission(self, submission_instance, list_of_files_in_upload_area):
@@ -493,8 +493,8 @@ class CmdSubmitFile:
         print(f"File {self.file} is validated successfully. Initiating submission")
         print(f"File {self.file} being uploaded to storage")
 
-        upload_instance = CmdUpload(self.aws, self.args)
-        upload_instance.upload_file(self.dataset, self.file, os.path.basename(self.file))
+        upload_instance = CmdUpload(self.storage, self.args)
+        upload_instance.upload_file(self.dataset, self.file, os.path.basename(self.file), 1, 1)
 
     def _is_add_action(self):
         """Check if the current action is 'ADD'."""
@@ -696,7 +696,7 @@ class CmdSubmitFile:
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
             if os.path.exists(output_file):
-                CmdUpload(self.aws, self.args).upload_file(self.dataset, output_file, os.path.basename(output_file))
+                CmdUpload(self.storage, self.args).upload_file(self.dataset, output_file, os.path.basename(output_file), 1, 1)
                 print(f"File {output_file} uploaded successfully.")
             else:
                 raise FileNotFoundError(f"The output file {output_file} was not created or cannot be found.")
@@ -709,11 +709,19 @@ class CmdSubmitFile:
         """Handle actions needed when a submission fails."""
         try:
             if self._is_add_action():
-                self._handle_add_action_failure(submission_envelope_id, submission_instance, error)
+                return self._handle_add_action_failure(
+                    submission_envelope_id,
+                    submission_instance,
+                    error
+                )
             elif self._is_modify_action():
-                self._handle_modify_action_failure(error)
+                return self._handle_modify_action_failure(error)
+            else:
+                # Fallback if some unexpected action type appears
+                return False, "Submission failed; unknown action type during rollback."
         except Exception as e:
             print(f"Failed to rollback submission {submission_envelope_id}: {str(e)}")
+            return False, f"Failed to rollback submission {submission_envelope_id}: {str(e)}"
 
     def _handle_add_action_failure(self, submission_envelope_id, submission_instance, error):
         """Handle failure during 'ADD' action."""

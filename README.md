@@ -332,18 +332,24 @@ MORPHIC_EBI_COLLECTION_UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 This is the private on-prem storage where files will land.
 
-### 1.4 Configure morphic-util
-Your administrator provides a UUID, for example:
+### 1.4 Globus authentication & configuration
+#### 1. Log in to Globus once (stores a refresh token locally)
 ```shell script
-morphic-util config
+morphic-util config-login
 ```
-This stores:
-* Globus Native App client ID
-* Refresh token
-* Your source endpoint UUID
-* The EBI collection UUID
-* The destination root path
-* The Provider API URL and key
+This will:
+* Open an authentication URL (or print it to the terminal)
+* Ask you for the auth code
+* Store a long-lived refresh token in ~/.morphic-util/config.json
+(used automatically for future runs, no need to re-login each time)
+
+#### 2. Register your source collection (where your files live)
+```shell script
+morphic-util config-globus --src-collection-uuid <YOUR_SOURCE_COLLECTION_UUID>
+```
+* <YOUR_SOURCE_COLLECTION_UUID> is your personal/desktop endpoint (e.g. Globus Connect Personal)
+* This value is saved in ~/.morphic-util/config.json under src_collection_uuid
+* Destination collection, API URL, and dest root are preconfigured by the service admin (via env/defaults)
 
 Configuration is stored at:
 ```shell script
@@ -353,7 +359,7 @@ Configuration is stored at:
 ## 2. Creating a Dataset & Upload Area (via UI or CLI)
 
 In the UI:
-*  Create a dataset → backend automatically creates an upload folder on the EBI collection (via Globus API).
+* Create a dataset → backend automatically creates an upload folder on the EBI collection (via Globus API).
 In the CLI:
 ```shell script
 morphic-util submit --type dataset --file dataset.json --dataset-type raw
@@ -374,7 +380,6 @@ morphic-util upload myfile.fastq.gz
 ```
 
 The CLI will:
-
 1. Resolve dataset folder via Provider API
 2. Auto-activate Globus endpoints
 3. Create missing directories if needed
@@ -397,6 +402,21 @@ morphic-util submit-file \
 ```
 This registers biomaterials, protocols, library preps, and sequencing files.
 
+### 5. Globus-backed delete
+The delete command can use the Provider API + Globus backend for asynchronous deletion of files from the dataset’s upload area.
+```shell script
+morphic-util delete -g -a
+morphic-util delete -g path/to/file1 path/to/file2
+```
+Options:
+* `-g, --globus`
+Use the Globus-backed Provider API delete:
+  * Submits an async Globus delete task
+  * Prints a summary and task id (server-side)
+* `-a`
+Delete all contents of the current dataset area
+* `PATH [...]`
+Delete specific file(s) or subpaths within the dataset area
 
 ### 5. Full User Journey Summary
 1. Login / configure morphic-util 

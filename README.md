@@ -300,3 +300,109 @@ Run tests
 ```shell script
 nosetests
 ```
+
+# Globus Submission Flow (New Storage Backend)
+
+morphic-util now supports submitting datasets and uploading files directly to EMBL-EBI on-prem private storage via Globus.
+This section describes the end-to-end user journey.
+
+## 1. Globus Setup (one time only)
+
+Before using morphic-util for uploads, submitters must:
+
+### 1.1 Install Globus CLI
+```shell script
+pip install globus-cli
+globus login
+```
+
+### 1.2 Create / use a personal Globus endpoint
+```shell script
+globus endpoint search "$(hostname)"
+globus endpoint local-id
+```
+Copy this value into:
+* `MORPHIC_SRC_COLLECTION_UUID` (environment variable), or
+* the CLI config when prompted (`src_collection_uuid`).
+
+### 1.3 Identify the EBI destination endpoint
+Your administrator provides a UUID, for example:
+```shell script
+MORPHIC_EBI_COLLECTION_UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+This is the private on-prem storage where files will land.
+
+### 1.4 Configure morphic-util
+Your administrator provides a UUID, for example:
+```shell script
+morphic-util config
+```
+This stores:
+* Globus Native App client ID
+* Refresh token
+* Your source endpoint UUID
+* The EBI collection UUID
+* The destination root path
+* The Provider API URL and key
+
+Configuration is stored at:
+```shell script
+~/.morphic-util/config.json
+```
+
+## 2. Creating a Dataset & Upload Area (via UI or CLI)
+
+In the UI:
+*  Create a dataset → backend automatically creates an upload folder on the EBI collection (via Globus API).
+In the CLI:
+```shell script
+morphic-util submit --type dataset --file dataset.json --dataset-type raw
+morphic-util select <DATASET_ID>
+```
+The dataset ID = upload area name.
+
+## 3. Uploading Files with Globus
+
+### 3.1 Select active dataset upload area
+```shell script
+morphic-util select <DATASET_ID>
+```
+
+### 3.2 Upload files
+```shell script
+morphic-util upload myfile.fastq.gz
+```
+
+The CLI will:
+
+1. Resolve dataset folder via Provider API
+2. Auto-activate Globus endpoints
+3. Create missing directories if needed
+4. Submit a Globus Transfer Task
+5. Stream live progress (bytes, rate, ETA)
+6. Confirm completion
+
+### 3.3 List uploaded files
+```shell script
+morphic-util list
+```
+
+### 4. Submitting Metadata After Upload
+Once files are uploaded:
+```shell script
+morphic-util submit-file \
+  --file metadata.xlsx \
+  --action ADD \
+  --dataset <DATASET_ID>
+```
+This registers biomaterials, protocols, library preps, and sequencing files.
+
+
+### 5. Full User Journey Summary
+1. Login / configure morphic-util 
+2. Ensure Globus local endpoint is available 
+3. Create dataset (UI or CLI) → backend creates upload folder on EBI private storage 
+4. Select dataset as upload target 
+5. Upload files via Globus 
+6. Verify uploaded files 
+7. Submit metadata referencing uploaded files

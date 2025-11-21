@@ -6,7 +6,9 @@ import requests
 from ait.commons.util.common import format_err
 from ait.commons.util.local_state import set_selected_area
 from ait.commons.util.storage.base import Storage
-
+from ait.commons.util.settings.morphic_util import (
+    BASE_URL
+)
 
 class CmdCreate:
     """
@@ -43,7 +45,7 @@ class CmdCreate:
         - Call Storage API: POST /submissions/{name}/init
         - Mark area as selected locally.
         """
-        base_url = os.getenv("MORPHIC_API_URL", "https://api.ingest.dev.archive.morphic.bio")
+        base_url = os.getenv("MORPHIC_API_URL", BASE_URL)
         api_key = os.getenv("MORPHIC_API_KEY")
 
         url = base_url.rstrip("/") + f"/submissions/{name}/init"

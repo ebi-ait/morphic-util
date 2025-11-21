@@ -15,6 +15,11 @@ import globus_sdk as g
 from globus_sdk.scopes import TransferScopes
 from os.path import basename
 
+from ait.commons.util.user_profile import get_profile
+from ait.commons.util.settings.morphic_util import (
+    BASE_URL
+)
+
 # Placeholder Definitions for Type Hinting
 class Storage:
     pass
@@ -145,12 +150,13 @@ def _load_globus_config() -> dict:
     """Read config.json and overlay environment variables."""
     cfg: dict = {}
 
+    print("Globus Backend - Submit BASE_URL:", BASE_URL)
     defaults = {
         K_NATIVE_CLIENT_ID: os.getenv("MORPHIC_NATIVE_CLIENT_ID", "ada49ae3-31b3-4d2c-9f25-893876ef3952"),
-        K_EBI_UUID: os.getenv("MORPHIC_EBI_COLLECTION_UUID", ""),
+        K_EBI_UUID: os.getenv("MORPHIC_EBI_COLLECTION_UUID", "56c5c4f0-601a-4555-9aca-70f8cacaac0f"),
         K_DEST_ROOT: os.getenv("MORPHIC_DEST_ROOT", "/"),
         K_SRC_UUID: os.getenv("MORPHIC_SRC_COLLECTION_UUID", ""),
-        K_API_URL: os.getenv("MORPHIC_API_URL", "http://127.0.0.1:8080"),
+        K_API_URL: os.getenv("MORPHIC_API_URL", BASE_URL),
     }
 
     env_map = {
@@ -208,7 +214,7 @@ def _qs(**params) -> str:
 
 
 def _api_call(cfg: dict, method: str, path: str, data: Optional[dict] = None):
-    """Call the Morphic Storage API (the FastAPI service)."""
+    """Call the Morphic Storage / Provider API."""
     base = cfg.get(K_API_URL)
     if not base:
         raise RuntimeError("Missing api_url in Globus config (MORPHIC_API_URL).")
@@ -221,6 +227,12 @@ def _api_call(cfg: dict, method: str, path: str, data: Optional[dict] = None):
     else:
         body = None
 
+    # NEW: Cognito bearer token from cfg
+    token = cfg.get("access_token")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+
+    # Existing API key support (optional / fallback)
     apikey = cfg.get(K_API_KEY) or os.getenv("MORPHIC_API_KEY")
     if apikey:
         req.add_header("X-Api-Key", apikey)
@@ -310,6 +322,14 @@ class GlobusStorage(Storage):
         self._tc: g.TransferClient | None = None
         self._activated: bool = False
 
+        try:
+            profile = get_profile("morphic-util")
+            token = getattr(profile, "access_token", None)
+            if token:
+                self.cfg["access_token"] = token
+        except Exception:
+            pass
+
     def _print_area_context(self, op: str, area: str) -> None:
             """
             Small helper to print which area an operation is acting on.
@@ -387,6 +407,13 @@ class GlobusStorage(Storage):
         )
 
         req = urllib.request.Request(url, method="GET")
+
+        # NEW: bearer token
+        token = self.cfg.get("access_token")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+
+        # existing API key fallback
         apikey = self.cfg.get(K_API_KEY) or os.getenv("MORPHIC_API_KEY")
         if apikey:
             req.add_header("X-Api-Key", apikey)

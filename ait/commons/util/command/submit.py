@@ -11,6 +11,9 @@ from urllib.parse import urlparse
 from ait.commons.util.spreadsheet_util import SubmissionError
 from ait.commons.util.user_profile import get_profile
 from ait.commons.util.provider_api_util import ProviderApi
+from ait.commons.util.settings.morphic_util import (
+    BASE_URL
+)
 
 import time
 
@@ -193,7 +196,8 @@ class CmdSubmit:
         transform(file): Transforms the input file to a JSON object.
         put_to_provider_api(url, access_token): Sends a PUT request to the provider API.
     """
-    BASE_URL = 'https://api.ingest.dev.archive.morphic.bio/'
+    BASE_URL = BASE_URL
+    print("Submit BASE_URL:", BASE_URL)
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 

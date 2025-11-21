@@ -38,6 +38,8 @@ LOCAL_STATE_FILE = USER_HOME + '/.hca-util'
 # COGNITO_USER_POOL_ID = 'eu-west-2_2BpGQDRSU'
 # IAM_USER = 'morphic-admin'
 
+BASE_URL = 'https://api.ingest.dev.archive.morphic.bio/'
+
 COGNITO_MORPHIC_UTIL_ADMIN = 'morphic-dev-admin'
 COGNITO_CLIENT_ID = '1rfis94rvnden5elmocospd256'
 COGNITO_IDENTITY_POOL_ID = 'eu-west-2:d6531e9c-020d-4ee8-bf3b-255393c500e9'

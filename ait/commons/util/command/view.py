@@ -1,10 +1,12 @@
 from ait.commons.util.aws_client import Aws
 from ait.commons.util.provider_api_util import ProviderApi
 from ait.commons.util.user_profile import get_profile
-
+from ait.commons.util.settings.morphic_util import (
+    BASE_URL
+)
 
 class CmdView:
-    base_url = 'https://api.ingest.dev.archive.morphic.bio'
+    base_url = BASE_URL
 
     def __init__(self, args):
         self.args = args

@@ -14,7 +14,9 @@ from ait.commons.util.provider_api_util import ProviderApi
 from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter, ValidationError, \
     merge_library_preparation_sequencing_file, merge_cell_line_and_differentiated_cell_line, \
     merge_differentiated_cell_line_and_library_preparation, SubmissionError, process_library_preparations
-
+from ait.commons.util.settings.morphic_util import (
+    BASE_URL
+)
 
 # Define a class for handling submission of a command file
 def validate_sequencing_files(sequencing_files,
@@ -73,7 +75,7 @@ def _create_expression_alterations(submission_instance,
 
 
 class CmdSubmitFile:
-    BASE_URL = 'https://api.ingest.dev.archive.morphic.bio/'
+    BASE_URL = BASE_URL
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 

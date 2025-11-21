@@ -332,8 +332,25 @@ MORPHIC_EBI_COLLECTION_UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 This is the private on-prem storage where files will land.
 
-### 1.4 Globus authentication & configuration
-#### 1. Log in to Globus once (stores a refresh token locally)
+## 2. Authentication & Configuration (Cognito + Globus)
+`morphic-util` uses two authentication systems, each for a different purpose:
+
+| System | Purpose | Required For |
+|--------|---------|--------------|
+| **AWS Cognito** | Submitting studies/datasets, API access, checking/upload area metadata | All metadata operations |
+| **Globus Native App Auth** | High-speed on-prem file transfer to Morphic private storage | File upload & delete operations |
+
+Submitters perform Cognito login once and Globus login once.
+
+### 2.1 Cognito Authentication (required for all API actions)
+
+Authenticate using your Morphic submitter credentials.
+
+```bash
+morphic-util config <USERNAME> <PASSWORD>
+```
+
+### 2.2 Globus Authentication (required for file transfers)
 ```shell script
 morphic-util config-login
 ```
@@ -343,7 +360,7 @@ This will:
 * Store a long-lived refresh token in ~/.morphic-util/config.json
 (used automatically for future runs, no need to re-login each time)
 
-#### 2. Register your source collection (where your files live)
+### 2.3 Register your source collection (where your files live)
 ```shell script
 morphic-util config-globus --src-collection-uuid <YOUR_SOURCE_COLLECTION_UUID>
 ```
@@ -356,8 +373,7 @@ Configuration is stored at:
 ~/.morphic-util/config.json
 ```
 
-## 2. Creating a Dataset & Upload Area (via UI or CLI)
-
+## 3. Creating a Dataset & Upload Area (via UI or CLI)
 In the UI:
 * Create a dataset → backend automatically creates an upload folder on the EBI collection (via Globus API).
 In the CLI:
@@ -367,14 +383,14 @@ morphic-util select <DATASET_ID>
 ```
 The dataset ID = upload area name.
 
-## 3. Uploading Files with Globus
+## 3.1 Uploading Files with Globus
 
-### 3.1 Select active dataset upload area
+### 1. Select active dataset upload area
 ```shell script
 morphic-util select <DATASET_ID>
 ```
 
-### 3.2 Upload files
+### 2. Upload files
 ```shell script
 morphic-util upload myfile.fastq.gz
 ```
@@ -387,7 +403,7 @@ The CLI will:
 5. Stream live progress (bytes, rate, ETA)
 6. Confirm completion
 
-### 3.3 List uploaded files
+### 3. List uploaded files
 ```shell script
 morphic-util list
 ```
@@ -418,11 +434,12 @@ Delete all contents of the current dataset area
 * `PATH [...]`
 Delete specific file(s) or subpaths within the dataset area
 
-### 5. Full User Journey Summary
-1. Login / configure morphic-util 
-2. Ensure Globus local endpoint is available 
-3. Create dataset (UI or CLI) → backend creates upload folder on EBI private storage 
-4. Select dataset as upload target 
-5. Upload files via Globus 
-6. Verify uploaded files 
-7. Submit metadata referencing uploaded files
+## 4. Full User Journey Summary
+1. Authenticate with Morphic (Cognito)
+2. Authenticate with Globus (one-time login for transfer)
+3. Configure Globus source endpoint (your local/GCP collection UUID)
+4. Create dataset (UI or CLI) → backend creates upload folder on EBI private storage 
+5. Select dataset as upload target 
+6. Upload data files via Globus (morphic-util upload)
+7. Verify uploaded files (morphic-util list or UI)
+8. Submit metadata referencing uploaded files

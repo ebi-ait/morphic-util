@@ -378,7 +378,7 @@ In the UI:
 * Create a dataset → backend automatically creates an upload folder on the EBI collection (via Globus API).
 In the CLI:
 ```shell script
-morphic-util submit --type dataset --file dataset.json --dataset-type raw
+morphic-util submit --type dataset --file my_dataset.json --dataset-type raw
 morphic-util select <DATASET_ID>
 ```
 The dataset ID = upload area name.

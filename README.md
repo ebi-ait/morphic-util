@@ -352,7 +352,7 @@ morphic-util config <USERNAME> <PASSWORD>
 
 ### 2.2 Globus Authentication (required for file transfers)
 ```shell script
-morphic-util config-login
+morphic-util globus-login
 ```
 This will:
 * Open an authentication URL (or print it to the terminal)

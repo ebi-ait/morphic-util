@@ -90,9 +90,9 @@ def parse_args(args):
         help='Your source Globus Collection UUID (e.g. your Globus Connect Personal endpoint)'
     )
 
-    parser_config_login = cmd_parser.add_parser(
-        'config-login',
-        help='authenticate with Globus and store a refresh token'
+    parser_globus_login = cmd_parser.add_parser(
+        'globus-login',
+        help='authenticate with Globus and store a refresh token for EBI on-prem private storage'
     )
 
     parser_submit = cmd_parser.add_parser('submit', help='submit your metadata')
@@ -201,7 +201,7 @@ def main():
     try:
         parsed_args = parse_args(sys.argv[1:])
 
-        if parsed_args.command == 'config-login':
+        if parsed_args.command == 'globus-login':
             gs = GlobusStorage()
             _ = gs.tc  # triggers interactive login if needed
             print("✓ Globus login completed and refresh token stored.")

@@ -16,6 +16,39 @@ from ait.commons.util.settings.morphic_util import (
 )
 
 import time
+from ait.commons.util.storage.globus_backend import (
+    _load_globus_config,
+    K_GLOBUS_ID,
+)
+
+try:
+    _GLOBUS_CFG = _load_globus_config()
+except Exception:
+    _GLOBUS_CFG = {}
+
+def _build_headers(content_type: str, access_token: str, include_globus: bool = True) -> dict:
+    """
+    Build standard headers for calls to the Provider API.
+
+    - Always sets Content-Type and Authorization.
+    - Optionally attaches X-Globus-Identity if present in ~/.morphic-util/config.json.
+    """
+    headers = {
+        "Content-Type": content_type,
+        "Authorization": f"Bearer {access_token}",
+    }
+
+    if include_globus:
+        try:
+            globus_id = _GLOBUS_CFG.get(K_GLOBUS_ID)
+            if globus_id:
+                headers["X-Globus-Identity"] = globus_id
+            else:
+                pass
+        except Exception as e:
+            pass
+
+    return headers
 
 def matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
     return expression_alteration.expression_alteration_id.replace(" ",
@@ -105,18 +138,22 @@ def create_new_submission_envelope(url, access_token):
     Returns:
         tuple: A tuple containing the response data and the status code.
     """
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {access_token}'
-    }
+    headers = _build_headers("application/json", access_token)
 
     response = requests.post(url, headers=headers, json={})
     status_code = response.status_code
 
     if status_code in {200, 201}:
-        response_data = response.json()
+        try:
+            response_data = response.json()
+        except ValueError:
+            print("[submit] Non-JSON response when creating submission envelope:")
+            print(response.text[:1000])
+            raise
         return response_data, status_code
 
+    print(f"[submit] Failed to create submission envelope: {status_code}")
+    print(response.text[:1000])
     return None, status_code
 
 
@@ -132,15 +169,19 @@ def post_to_provider_api_and_get_entity_id(url, data, access_token):
     Returns:
         str: The entity ID extracted from the response URL.
     """
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {access_token}'
-    }
+    headers = _build_headers("application/json", access_token)
 
+    print(f"[submit] POST (entity_id) {url}")
     response = requests.post(url, headers=headers, json=data)
-    response_data = response.json()
-    entity_url = response_data['_links']['self']['href']
 
+    try:
+        response_data = response.json()
+    except ValueError:
+        print("[submit] Non-JSON response from provider API (post_to_provider_api_and_get_entity_id):")
+        print(response.text[:1000])
+        raise
+
+    entity_url = response_data['_links']['self']['href']
     return get_entity_id_from_hal_link(entity_url)
 
 
@@ -157,15 +198,25 @@ def post_to_provider_api(url, data_type_in_hal_link, data, access_token):
     Returns:
         str: The URL from the response.
     """
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {access_token}'
-    }
-
+    headers = _build_headers("application/json", access_token)
     response = requests.post(url, headers=headers, json=data)
-    response_data = response.json()
-    url = response_data['_links'][data_type_in_hal_link]['href']
 
+    # If not 2xx, print body and fail with a clear error
+    if response.status_code // 100 != 2:
+        print("[submit] ERROR response from provider API (post_to_provider_api):")
+        print(response.text[:1000])
+        raise SubmissionError([
+            f"Provider API POST {url} failed with status {response.status_code}"
+        ])
+
+    try:
+        response_data = response.json()
+    except ValueError:
+        print("[submit] Non-JSON response from provider API (post_to_provider_api) despite 2xx:")
+        print(response.text[:1000])
+        raise
+
+    url = response_data['_links'][data_type_in_hal_link]['href']
     return url
 
 
@@ -197,7 +248,7 @@ class CmdSubmit:
         put_to_provider_api(url, access_token): Sends a PUT request to the provider API.
     """
     BASE_URL = BASE_URL
-    print("Submit BASE_URL:", BASE_URL)
+#     print("Submit BASE_URL:", BASE_URL)
     SUBMISSION_ENVELOPE_CREATE_URL = f"{BASE_URL}/submissionEnvelopes/updateSubmissions"
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
@@ -1310,10 +1361,7 @@ class CmdSubmit:
         return self.provider_api.put(put_url, access_token)
 
     def patch_to_provider_api(self, entity_patch_url, data, access_token):
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {access_token}'
-        }
+        headers = _build_headers("application/json", access_token)
 
         response = requests.patch(entity_patch_url, headers=headers, json=data)
         return response.status_code // 100 == 2
@@ -1417,10 +1465,7 @@ class CmdSubmit:
             bool: True if the deletion was successful, False otherwise.
         """
         url = f"{self.SUBMISSION_ENVELOPE_BASE_URL}/{submission_envelope_id}"
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {access_token}'
-        }
+        headers = _build_headers("application/json", access_token)
 
         params = {'force': str(force_delete).lower()}
 
@@ -1441,10 +1486,7 @@ class CmdSubmit:
         Raises:
             Exception: If the linkage fails.
         """
-        headers = {
-            'Content-Type': 'text/uri-list',
-            'Authorization': f'Bearer {access_token}'
-        }
+        headers = _build_headers("text/uri-list", access_token)
 
         response = requests.post(url, headers=headers, data=f"{self.BASE_URL}/{link_to}/{input_id}")
 

@@ -41,8 +41,6 @@ K_SRC_UUID = "src_collection_uuid"
 K_API_URL = "api_url"
 K_API_KEY = "api_key"
 
-K_GLOBUS_ID = "globus_identity_id"
-
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 # --------------------------
@@ -169,7 +167,6 @@ def _load_globus_config() -> dict:
         K_SRC_UUID: "MORPHIC_SRC_COLLECTION_UUID",
         K_API_URL: "MORPHIC_API_URL",
         K_API_KEY: "MORPHIC_API_KEY",
-        K_GLOBUS_ID: "MORPHIC_GLOBUS_IDENTITY_ID"
     }
 
     if CONFIG_FILE.exists():
@@ -230,15 +227,9 @@ def _api_call(cfg: dict, method: str, path: str, data: Optional[dict] = None):
     else:
         body = None
 
-    # NEW: Cognito bearer token from cfg
-    token = cfg.get("access_token")
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
-
-    # NEW: Globus identity id – this is what backend uses for ACLs
-    globus_id = cfg.get(K_GLOBUS_ID)
-    if globus_id:
-        req.add_header("X-Globus-Identity", globus_id)
+    # 1) Always use ingest bearer token (Globus access token preferred)
+    bearer = _get_ingest_bearer_token(cfg)
+    req.add_header("Authorization", f"Bearer {bearer}")
 
     # Existing API key support (optional / fallback)
     apikey = cfg.get(K_API_KEY) or os.getenv("MORPHIC_API_KEY")
@@ -261,9 +252,8 @@ def _get_transfer_client(cfg: dict) -> g.TransferClient:
 
     ac = g.NativeAppAuthClient(native_client_id)
     rt = cfg.get(K_REFRESH_TOKEN)
-    have_identity = bool(cfg.get(K_GLOBUS_ID))
 
-    if rt and have_identity:
+    if rt:
         authorizer = g.RefreshTokenAuthorizer(rt, ac)
         return g.TransferClient(authorizer=authorizer)
 
@@ -272,6 +262,7 @@ def _get_transfer_client(cfg: dict) -> g.TransferClient:
             str(TransferScopes.all),  # transfer
             "openid",                 # OIDC userinfo
             "profile",
+            "email",
         ],
         refresh_tokens=True,
         prefill_named_grant="morphic-util CLI",
@@ -290,6 +281,12 @@ def _get_transfer_client(cfg: dict) -> g.TransferClient:
     # Save transfer refresh token
     cfg[K_REFRESH_TOKEN] = transfer_rs["refresh_token"]
 
+    if auth_rs is not None and auth_rs.get("refresh_token"):
+        cfg["auth_refresh_token"] = auth_rs["refresh_token"]
+        print("[globus] stored auth_refresh_token in config.json", file=sys.stderr)
+    else:
+        print("[globus] WARNING: no auth_refresh_token returned; check requested scopes", file=sys.stderr)
+
     try:
         access_token = None
         if auth_rs is not None:
@@ -301,27 +298,10 @@ def _get_transfer_client(cfg: dict) -> g.TransferClient:
         if access_token:
             auth_authorizer = AccessTokenAuthorizer(access_token)
             authc = g.AuthClient(authorizer=auth_authorizer)
-            ui = authc.userinfo()  # returns GlobusHTTPResponse
-
-            # GlobusHTTPResponse supports dict-style access: ui["sub"]
-            try:
-                gid = ui["sub"]
-            except Exception as e:
-                print(f"[globus] couldn't read sub from userinfo: {e}", file=sys.stderr)
-                gid = None
-
-            print(f"[globus] extracted gid from /userinfo: {gid}", file=sys.stderr)
-
-            if gid:
-                cfg[K_GLOBUS_ID] = gid
+            # We call userinfo mainly as a sanity check; we don't need to persist the subject anymore.
+            _ = authc.userinfo()
     except Exception as e:
         print(f"[globus] ERROR calling /userinfo: {e}", file=sys.stderr)
-
-    # Fallback: also try resource_owner if present on transfer token
-    if not cfg.get(K_GLOBUS_ID):
-        rid = transfer_rs.get("resource_owner")
-        if rid:
-            cfg[K_GLOBUS_ID] = rid
 
     _save_globus_config(cfg)
 
@@ -335,6 +315,52 @@ def _get_transfer_client(cfg: dict) -> g.TransferClient:
     tc = g.TransferClient(authorizer=authorizer)
 
     return tc
+
+def debug_print_globus_access_token() -> None:
+    """
+    Dev helper: print a fresh Globus access token used for ingest API calls.
+    """
+    cfg = _load_globus_config()
+    token = _get_ingest_bearer_token(cfg)
+
+    print("=== Globus access token (for ingest API) ===")
+    print(token)
+    print("=== END TOKEN ===")
+
+def _get_ingest_bearer_token(cfg: dict) -> str:
+    """
+    Use the stored Globus AUTH refresh token to get a fresh access token
+    for auth.globus.org (used by the ingest / provider API).
+    """
+    native_client_id = cfg.get(K_NATIVE_CLIENT_ID)
+    if not native_client_id:
+        raise RuntimeError("Missing Globus native client ID in config.")
+
+    auth_rt = cfg.get("auth_refresh_token")
+    if not auth_rt:
+        raise RuntimeError(
+            "No auth_refresh_token found in config.json. "
+            "Run `morphic-util globus-login` to (re)authorise with Globus."
+        )
+
+    # Same client as _get_transfer_client uses
+    ac = g.NativeAppAuthClient(native_client_id)
+
+    # This gives us fresh tokens for auth.globus.org
+    tokens = ac.oauth2_refresh_token(auth_rt)
+    rs_map = tokens.by_resource_server
+
+    auth_rs = rs_map.get("auth.globus.org", {})
+    access_token = auth_rs.get("access_token")
+
+    if not access_token:
+        raise RuntimeError(
+            "Did not get an auth.globus.org access_token from refresh response. "
+            "Check requested scopes (openid, profile, email)."
+        )
+
+    return access_token
+
 
 def _try_make_area_dir(
     tc: g.TransferClient,
@@ -373,10 +399,11 @@ class GlobusStorage(Storage):
         self._activated: bool = False
 
         try:
-            profile = get_profile("morphic-util")
-            token = getattr(profile, "access_token", None)
-            if token:
-                self.cfg["access_token"] = token
+            if "auth_refresh_token" not in self.cfg:
+                profile = get_profile("morphic-util")
+                token = getattr(profile, "access_token", None)
+                if token:
+                    self.cfg["access_token"] = token
         except Exception:
             pass
 
@@ -439,7 +466,8 @@ class GlobusStorage(Storage):
             res = _api_call(self.cfg, "GET", f"/datasets/{area}/globus/area-exists")
             exists = bool(res.get("exists"))
             return exists
-        except Exception:
+        except Exception as e:
+            print(f"[GlobusStorage] area_exists error for {area}: {e}", file=sys.stderr)
             return False
 
     def data_file_exists(self, area: str, dest_name: str) -> bool:
@@ -458,15 +486,9 @@ class GlobusStorage(Storage):
 
         req = urllib.request.Request(url, method="GET")
 
-        # Cognito bearer token
-        token = self.cfg.get("access_token")
-        if token:
-            req.add_header("Authorization", f"Bearer {token}")
-
-        # NEW: Globus identity header (required by provider API)
-        globus_id = self.cfg.get(K_GLOBUS_ID)
-        if globus_id:
-            req.add_header("X-Globus-Identity", globus_id)
+        # Use Globus bearer token (same as _api_call)
+        bearer = _get_ingest_bearer_token(self.cfg)
+        req.add_header("Authorization", f"Bearer {bearer}")
 
         # Existing API key fallback
         apikey = self.cfg.get(K_API_KEY) or os.getenv("MORPHIC_API_KEY")
@@ -607,9 +629,10 @@ class GlobusStorage(Storage):
 
             except KeyboardInterrupt:
                 print(
-                    "\nInterrupted. Task continues server-side; "
-                    f"check later with the task_id={task_id}."
+                        f"\nUpload interrupted by user. "
+                        f"Transfer task may still be running on Globus (task_id={task_id})."
                 )
+                raise
 
     def list(self, area: str, prefix: str = "") -> List[str]:
         """

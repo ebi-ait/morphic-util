@@ -18,37 +18,20 @@ from ait.commons.util.settings.morphic_util import (
 import time
 from ait.commons.util.storage.globus_backend import (
     _load_globus_config,
-    K_GLOBUS_ID,
+    _get_ingest_bearer_token,
 )
 
-try:
-    _GLOBUS_CFG = _load_globus_config()
-except Exception:
-    _GLOBUS_CFG = {}
-
-def _build_headers(content_type: str, access_token: str, include_globus: bool = True) -> dict:
+def _build_headers(content_type: str, access_token: str) -> dict:
     """
     Build standard headers for calls to the Provider API.
 
-    - Always sets Content-Type and Authorization.
-    - Optionally attaches X-Globus-Identity if present in ~/.morphic-util/config.json.
+    - Sets Content-Type.
+    - Sets Authorization: Bearer <access_token>.
     """
-    headers = {
+    return {
         "Content-Type": content_type,
         "Authorization": f"Bearer {access_token}",
     }
-
-    if include_globus:
-        try:
-            globus_id = _GLOBUS_CFG.get(K_GLOBUS_ID)
-            if globus_id:
-                headers["X-Globus-Identity"] = globus_id
-            else:
-                pass
-        except Exception as e:
-            pass
-
-    return headers
 
 def matching_expression_alteration_and_cell_line(cell_line, expression_alteration):
     return expression_alteration.expression_alteration_id.replace(" ",
@@ -260,7 +243,17 @@ class CmdSubmit:
             args (Namespace): Command-line arguments.
         """
         self.args = args
-        self.access_token = get_profile('morphic-util').access_token
+
+        # Prefer Globus access token (same as GlobusStorage / provider API)
+        try:
+            cfg = _load_globus_config()
+            self.access_token = _get_ingest_bearer_token(cfg)
+            print("[submit] Using Globus access token for Provider API calls")
+        except Exception as e:
+            # Fallback: legacy profile (Cognito) if Globus isn’t configured
+            print(f"[submit] Falling back to profile access token: {e}")
+            self.access_token = get_profile('morphic-util').access_token
+
         self.type = getattr(self.args, 'type', None)
         self.file = getattr(self.args, 'file', None)
         self.dataset_type = getattr(self.args, 'dataset_type', None)

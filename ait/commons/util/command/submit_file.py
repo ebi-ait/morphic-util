@@ -18,25 +18,61 @@ from ait.commons.util.settings.morphic_util import (
     BASE_URL
 )
 
+from ait.commons.util.storage.globus_backend import (
+    _load_globus_config,
+    _get_ingest_bearer_token,
+)
+
+try:
+    _GLOBUS_CFG = _load_globus_config()
+except Exception:
+    _GLOBUS_CFG = {}
+
+
 # Define a class for handling submission of a command file
+import os
+
 def validate_sequencing_files(sequencing_files,
                               list_of_files_in_upload_area,
                               dataset,
                               errors):
+    """
+    Ensure that every sequencing file listed in the spreadsheet
+    has a matching file in the upload area.
+
+    - sequencing_files: list of SequencingFile objects (from parser)
+    - list_of_files_in_upload_area: iterable of paths/keys OR
+      formatted listing lines (as returned by `morphic-util list`)
+    """
+
+    storage_basenames = set()
+    for entry in (list_of_files_in_upload_area or []):
+        raw = str(entry).strip()
+        if not raw:
+            continue
+        first_field = raw.split()[0]
+        storage_basenames.add(os.path.basename(first_field))
+
+    if not sequencing_files:
+        return
+
+    missing = []
+
     for sequencing_file in sequencing_files:
-        match_found = False  # Flag to indicate if a match is found
+        file_name = (sequencing_file.file_name or "").strip()
+        if not file_name:
+            continue
 
-        for file_key in list_of_files_in_upload_area:
-            if sequencing_file.file_name == file_key:
-                match_found = True
-                break  # Exit the inner loop if a match is found
+        if file_name not in storage_basenames:
+            missing.append(file_name)
 
-        if not match_found:
-            errors.append(
-                f"No matching file found for sequencing file: {sequencing_file.file_name} "
-                f"in the upload area for the dataset: {dataset}"
-            )
-
+    if missing:
+        header = (
+            f"{len(missing)} sequencing files from the spreadsheet "
+            f"are missing in the upload area for dataset '{dataset}':"
+        )
+        details = "\n  - " + "\n  - ".join(missing)
+        errors.append(header + details)
 
 def get_content(unique_value):
     return {"content": unique_value}
@@ -87,8 +123,19 @@ class CmdSubmitFile:
             args: Command-line arguments passed to the script.
         """
         self.args = args
+
+        # Still load the profile – needed by build_storage etc.
         self.user_profile = get_profile('morphic-util')
-        self.access_token = self.user_profile.access_token
+
+        # Prefer Globus access token for Provider API calls
+        try:
+            self.access_token = _get_ingest_bearer_token(_GLOBUS_CFG)
+            print("[submit-file] Using Globus access token for Provider API calls")
+        except Exception as e:
+            # Fallback to legacy Cognito token if Globus config is missing/broken
+            print(f"[submit-file] Globus auth not available, using profile access token")
+            self.access_token = self.user_profile.access_token
+
         self.storage = build_storage(self.user_profile)
         self.provider_api = ProviderApi(self.BASE_URL)
         self.validation_errors = []
@@ -273,7 +320,9 @@ class CmdSubmitFile:
                                             submission_instance,
                                             None)
         except ValidationError as e:
-            print(f"Validation Error: {e.errors}")
+            print("Validation Error:")
+            for msg in e.errors:
+                print(msg)
             # self._delete_actions(self.submission_envelope_id, submission_instance, e)
             sys.exit(1)
         except SubmissionError as e:
@@ -456,47 +505,43 @@ class CmdSubmitFile:
             return None
 
     def _validate_and_upload(self, parsed_data, list_of_files_in_upload_area):
-        # Validate the parsed data and upload the file.
-        """
-        validate_sequencing_files(parsed_data['sequencing_files'], list_of_files_in_upload_area, self.dataset,
-                                  self.validation_errors)
-        """
-        """
-           Handle validation errors, including interacting with the user in case of a missing sheet.
-        """
+        # 1) Cross-check spreadsheet sequencing files vs storage
         try:
-            # Exit now if there are validation errors in the spreadsheet
+            sequencing_files = parsed_data.get("sequencing_files") if parsed_data else []
+        except Exception:
+            sequencing_files = []
+
+        validate_sequencing_files(
+            sequencing_files=sequencing_files,
+            list_of_files_in_upload_area=list_of_files_in_upload_area,
+            dataset=self.dataset,
+            errors=self.validation_errors,
+        )
+
+        # 2) Handle validation errors (spreadsheet + missing files)
+        try:
             if self.validation_errors:
                 raise ValidationError(self.validation_errors)
         except ValidationError:
-            # Check if the error is related to a missing sheet
-            missing_sheet_errors = [msg for msg in self.validation_errors if "Missing sheet" in msg]
+            missing_sheet_errors = [
+                msg for msg in self.validation_errors if "Missing sheet" in msg
+            ]
 
             if missing_sheet_errors:
-                # Extract the sheet name(s) from the errors
-                missing_sheets = ', '.join([msg.split("'")[1] for msg in missing_sheet_errors])
-                # Ask the user whether to proceed
-                """
-                user_response = input(
-                    f"A required sheet '{missing_sheets}' is missing. Do you want to proceed anyway? (yes/no): ").strip().lower()
-                if user_response == 'yes':
-                    print("Proceeding with execution...")
-                else:
-                """
-                print("Execution terminated due to missing required sheet.")
+                missing_sheets = ", ".join([msg.split("'")[1] for msg in missing_sheet_errors])
+                print(f"Execution terminated due to missing required sheet(s): {missing_sheets}.")
                 sys.exit(1)
             else:
-                # Print the error message
-                # print(f"Validation Error: {e.errors}")
-                # Exit the program with a non-zero status code to indicate an error
-                # sys.exit(1)
+                # Any other validation error, including missing files
                 raise ValidationError(self.validation_errors)
 
+        # 3) If we reach here, metadata + files are OK → upload spreadsheet
         print(f"File {self.file} is validated successfully. Initiating submission")
         print(f"File {self.file} being uploaded to storage")
 
         upload_instance = CmdUpload(self.storage, self.args)
         upload_instance.upload_file(self.dataset, self.file, os.path.basename(self.file), 1, 1)
+
 
     def _is_add_action(self):
         """Check if the current action is 'ADD'."""
@@ -638,10 +683,25 @@ class CmdSubmitFile:
                                  expression_alteration_df,
                                  cell_line_sheet_name,
                                  differentiated_or_undifferentiated_cell_line_sheet_name):
-        """Save the updated dataframes and upload the results."""
-        current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        output_file = f"submission_result_{current_time}.xlsx"
+        """Save the updated dataframes and upload the results.
 
+        The submission result file is written next to the original spreadsheet
+        (self.file) so that it lives under the same Globus-local root.
+        """
+        current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        output_basename = f"submission_result_{current_time}.xlsx"
+
+        # Write the workbook into the same directory as the input spreadsheet
+        # so Globus can see it on the local endpoint.
+        input_dir = os.path.dirname(os.path.abspath(self.file))
+        if not input_dir:
+            input_dir = os.getcwd()
+
+        output_file = os.path.join(input_dir, output_basename)
+
+        # -----------------------------
+        # 1) Build the Excel workbook
+        # -----------------------------
         try:
             # Expand gene info if in pooled mode
             if self.context == 'pooled_differentiated':
@@ -683,9 +743,10 @@ class CmdSubmitFile:
                 (updated_dfs[1], differentiated_or_undifferentiated_cell_line_sheet_name),
                 (updated_dfs[2], 'Library preparation'),
                 (updated_dfs[3], 'Sequence file'),
-                (expression_alteration_df, 'Expression alteration strategy')
+                (expression_alteration_df, 'Expression alteration strategy'),
             ]
 
+            # Actually write the Excel file
             with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
                 for df, sheet_name in dataframes:
                     if df is None:
@@ -697,15 +758,39 @@ class CmdSubmitFile:
                     print(f"Writing sheet '{sheet_name}' with shape {df.shape}")
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-            if os.path.exists(output_file):
-                CmdUpload(self.storage, self.args).upload_file(self.dataset, output_file, os.path.basename(output_file), 1, 1)
-                print(f"File {output_file} uploaded successfully.")
-            else:
-                raise FileNotFoundError(f"The output file {output_file} was not created or cannot be found.")
-
         except Exception as e:
-            print(f"Failed to upload file {output_file}. Error: {e}")
+            print(f"Failed to generate submission result workbook {output_file}. Error: {e}")
             print(f"Refer to dataset '{self.dataset}' for metadata tracing.")
+            raise
+
+        # ---------------------------------
+        # 2) Upload the workbook via Globus
+        # ---------------------------------
+        if not os.path.exists(output_file):
+            raise FileNotFoundError(
+                f"The output file {output_file} was not created or cannot be found."
+            )
+
+        try:
+            uploader = CmdUpload(self.storage, self.args)
+            uploader.upload_file(
+                self.dataset,
+                output_file,      # full path on the local endpoint
+                output_basename,  # name in the destination area
+                1,
+                1,
+            )
+            print(f"File {output_basename} uploaded successfully from {output_file}.")
+        except KeyboardInterrupt:
+            print(
+                f"\nUpload of {output_basename} was interrupted by the user. "
+                "The submission result file may not have been fully transferred."
+            )
+            raise
+        except Exception as e:
+            print(f"Failed to upload file {output_basename}. Error: {e}")
+            print(f"Refer to dataset '{self.dataset}' for metadata tracing.")
+            raise
 
     def _delete_actions(self, submission_envelope_id, submission_instance, error=None):
         """Handle actions needed when a submission fails."""

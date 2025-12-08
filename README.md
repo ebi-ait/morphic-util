@@ -332,25 +332,18 @@ MORPHIC_EBI_COLLECTION_UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 This is the private on-prem storage where files will land.
 
-## 2. Authentication & Configuration (Cognito + Globus)
-`morphic-util` uses two authentication systems, each for a different purpose:
+## 2. Authentication & Configuration (Globus-only — Cognito no longer required)
+As of the new Globus integration, morphic-util no longer uses or requires AWS Cognito.
+All authentication for both:
+* Provider API access
+* File upload/delete using Globus Transfer
 
-| System | Purpose | Required For |
-|--------|---------|--------------|
-| **AWS Cognito** | Submitting studies/datasets, API access, checking/upload area metadata | All metadata operations |
-| **Globus Native App Auth** | High-speed on-prem file transfer to Morphic private storage | File upload & delete operations |
+is done through Globus Native App Authentication.
 
-Submitters perform Cognito login once and Globus login once.
+Submitters now only need to log in to Globus once.
+No Cognito username/password is needed anymore.
 
-### 2.1 Cognito Authentication (required for all API actions)
-
-Authenticate using your Morphic submitter credentials.
-
-```bash
-morphic-util config <USERNAME> <PASSWORD>
-```
-
-### 2.2 Globus Authentication (required for file transfers)
+### 2.1 Globus Authentication (required for file transfers)
 ```shell script
 morphic-util globus-login
 ```

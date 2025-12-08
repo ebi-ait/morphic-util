@@ -32,17 +32,86 @@ except Exception:
 # Define a class for handling submission of a command file
 import os
 
-def validate_sequencing_files(sequencing_files,
-                              list_of_files_in_upload_area,
-                              dataset,
-                              errors):
+def validate_sequencing_files(
+    sequencing_files,
+    list_of_files_in_upload_area,
+    dataset,
+    errors,
+    spreadsheet_filename=None,
+):
     """
-    Ensure that every sequencing file listed in the spreadsheet
-    has a matching file in the upload area.
+    - Ensure every sequencing file listed in the spreadsheet exists in the upload area.
+    - Return a list of *extra* files present in the upload area but not referenced in the spreadsheet.
 
-    - sequencing_files: list of SequencingFile objects (from parser)
-    - list_of_files_in_upload_area: iterable of paths/keys OR
-      formatted listing lines (as returned by `morphic-util list`)
+    sequencing_files: list of SequencingFile objects
+    list_of_files_in_upload_area: raw entries from CmdList
+    dataset: dataset id (str)
+    errors: list to which validation error messages are appended
+    spreadsheet_filename: basename of the spreadsheet file, to exclude from extra files
+    """
+
+    sheet_files = set()
+    for sequencing_file in (sequencing_files or []):
+        file_name = (getattr(sequencing_file, "file_name", "") or "").strip()
+        if file_name:
+            sheet_files.add(file_name)
+
+    storage_basenames = set()
+
+    for entry in (list_of_files_in_upload_area or []):
+        raw = str(entry).strip()
+        if not raw:
+            continue
+
+        if raw.startswith("Name ") or raw.startswith("Name\t"):
+            continue
+        if raw.startswith("---") or set(raw) == {"-"}:
+            continue
+
+        if isinstance(entry, (tuple, list)):
+            candidate = str(entry[0]).strip()
+        else:
+            candidate = raw.split()[0].strip()
+
+        if "." not in candidate:
+            continue
+
+        basename = os.path.basename(candidate)
+
+        if spreadsheet_filename and basename == spreadsheet_filename:
+            continue
+        if basename.startswith("submission_result_") and basename.lower().endswith(".xlsx"):
+            continue
+
+        storage_basenames.add(basename)
+
+    missing = sorted(sheet_files - storage_basenames)
+    extra = sorted(storage_basenames - sheet_files)
+
+    if missing:
+        header = (
+            f"{len(missing)} sequencing files from the spreadsheet are missing in the "
+            f"upload area for dataset '{dataset}':"
+        )
+        details = "\n  - " + "\n  - ".join(missing)
+        errors.append(header + details)
+
+    return extra
+
+
+def warn_unreferenced_files(
+    sequencing_files,
+    list_of_files_in_upload_area,
+    dataset,
+    spreadsheet_path=None,
+):
+    """
+    Warn if there are files in the upload area that are *not* referenced
+    in the 'Sequence file' sheet of the spreadsheet.
+
+    This is a non-fatal warning, meant to catch:
+      - accidentally renamed / misnamed files
+      - leftover files from previous runs
     """
 
     storage_basenames = set()
@@ -53,26 +122,36 @@ def validate_sequencing_files(sequencing_files,
         first_field = raw.split()[0]
         storage_basenames.add(os.path.basename(first_field))
 
-    if not sequencing_files:
+    if not storage_basenames:
         return
 
-    missing = []
+    referenced = set()
+    for sf in (sequencing_files or []):
+        fn = (getattr(sf, "file_name", "") or "").strip()
+        if fn:
+            referenced.add(fn)
 
-    for sequencing_file in sequencing_files:
-        file_name = (sequencing_file.file_name or "").strip()
-        if not file_name:
-            continue
+    ignore_names = set()
 
-        if file_name not in storage_basenames:
-            missing.append(file_name)
+    if spreadsheet_path:
+        ignore_names.add(os.path.basename(spreadsheet_path))
 
-    if missing:
-        header = (
-            f"{len(missing)} sequencing files from the spreadsheet "
-            f"are missing in the upload area for dataset '{dataset}':"
+    for name in list(storage_basenames):
+        if name.startswith("submission_result_") and name.endswith(".xlsx"):
+            ignore_names.add(name)
+
+    unreferenced = storage_basenames - referenced - ignore_names
+
+    if unreferenced:
+        print(
+            "\n⚠ WARNING: The following files are present in the dataset "
+            f"upload area for '{dataset}' but are NOT referenced in the "
+            "spreadsheet 'Sequence file' sheet."
         )
-        details = "\n  - " + "\n  - ".join(missing)
-        errors.append(header + details)
+        print("   This may indicate misnamed or renamed files.\n")
+        for f in sorted(unreferenced):
+            print(f"   - {f}")
+        print("")
 
 def get_content(unique_value):
     return {"content": unique_value}
@@ -323,7 +402,20 @@ class CmdSubmitFile:
             print("Validation Error:")
             for msg in e.errors:
                 print(msg)
-            # self._delete_actions(self.submission_envelope_id, submission_instance, e)
+
+            # If we collected extra (unreferenced) files, also show them as a warning
+            extra_files = getattr(self, "extra_files", None)
+            if extra_files:
+                print()
+                print(
+                    f"⚠ WARNING: The following files are present in the dataset upload area for "
+                    f"'{self.dataset}' but are NOT referenced in the spreadsheet 'Sequence file' sheet.\n"
+                    f"   This may indicate misnamed or renamed files.\n"
+                )
+                for fn in extra_files:
+                    print(f"   - {fn}")
+                print()
+
             sys.exit(1)
         except SubmissionError as e:
             print(f"Submission Error: {e.errors}")
@@ -505,43 +597,37 @@ class CmdSubmitFile:
             return None
 
     def _validate_and_upload(self, parsed_data, list_of_files_in_upload_area):
-        # 1) Cross-check spreadsheet sequencing files vs storage
         try:
             sequencing_files = parsed_data.get("sequencing_files") if parsed_data else []
         except Exception:
             sequencing_files = []
 
-        validate_sequencing_files(
+        self.extra_files = validate_sequencing_files(
             sequencing_files=sequencing_files,
             list_of_files_in_upload_area=list_of_files_in_upload_area,
             dataset=self.dataset,
             errors=self.validation_errors,
+            spreadsheet_filename=os.path.basename(self.file) if getattr(self, "file", None) else None,
         )
 
-        # 2) Handle validation errors (spreadsheet + missing files)
-        try:
-            if self.validation_errors:
-                raise ValidationError(self.validation_errors)
-        except ValidationError:
-            missing_sheet_errors = [
-                msg for msg in self.validation_errors if "Missing sheet" in msg
-            ]
+        if self.validation_errors:
+            raise ValidationError(self.validation_errors)
 
-            if missing_sheet_errors:
-                missing_sheets = ", ".join([msg.split("'")[1] for msg in missing_sheet_errors])
-                print(f"Execution terminated due to missing required sheet(s): {missing_sheets}.")
-                sys.exit(1)
-            else:
-                # Any other validation error, including missing files
-                raise ValidationError(self.validation_errors)
+        if self.extra_files:
+            print(
+                f"⚠ WARNING: The following files are present in the dataset upload area for "
+                f"'{self.dataset}' but are NOT referenced in the spreadsheet 'Sequence file' sheet.\n"
+                f"   This may indicate misnamed or renamed files.\n"
+            )
+            for fn in self.extra_files:
+                print(f"   - {fn}")
+            print()
 
-        # 3) If we reach here, metadata + files are OK → upload spreadsheet
         print(f"File {self.file} is validated successfully. Initiating submission")
         print(f"File {self.file} being uploaded to storage")
 
         upload_instance = CmdUpload(self.storage, self.args)
         upload_instance.upload_file(self.dataset, self.file, os.path.basename(self.file), 1, 1)
-
 
     def _is_add_action(self):
         """Check if the current action is 'ADD'."""

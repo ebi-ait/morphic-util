@@ -306,31 +306,129 @@ nosetests
 morphic-util now supports submitting datasets and uploading files directly to EMBL-EBI on-prem private storage via Globus.
 This section describes the end-to-end user journey.
 
-## 1. Globus Setup (one time only)
+## Testing morphic-util (Globus-enabled branch)
 
-Before using morphic-util for uploads, submitters must:
+This guide is for colleagues who want to test the current Globus-enabled version of morphic-util from the development branch.
 
-### 1.1 Install Globus CLI
+It assumes no prior local setup and recommends using a clean Python environment.
+
+### Prerequisites
+
+Users need:
+* Python ≥ 3.10
+* pip available
+* Internet access
+* A Globus account
+(institutional login or ORCID-backed account both work)
+
+Verify locally:
 ```shell script
-pip install globus-cli
-globus login
+python3 --version
+pip --version
+```
+### Create a clean environment (strongly recommended)
+
+⚠️ This step is important.
+Testing has shown that existing virtual environments or globally installed packages can cause subtle issues.
+```shell script
+mkdir ~/morphic-test
+cd ~/morphic-test
+```
+```shell script
+python3 -m venv venv
+source venv/bin/activate
 ```
 
-### 1.2 Create / use a personal Globus endpoint
+Verify:
+```shell script
+python -V
+pip -V
+```
+
+You should now be inside a clean virtual environment.
+
+### Install morphic-util
+#### Option A — Install from GitHub branch (current reality)
+
+This is how internal users should install today:
+```shell script
+pip install git+https://github.com/ebi-ait/morphic-util.git@feature/globus-api-integration
+```
+
+#### Option B — Install from PyPI (future)
+Once released:
+```shell script
+pip install morphic-util
+```
+
+#### Verify installation
+```shell script
+morphic-util --help
+morphic-util --version
+```
+
+Expected:
+* No traceback
+* Version shown (e.g. 1.0.5)
+* Commands listed (e.g. config-globus, globus-login, create, select, upload, submit-file, etc.)
+
+## 1. Globus Setup (one time only)
+
+### 1.1 Identify your Globus source collection (where your files live)
+
+`morphic-util` needs to know **which Globus collection contains the files you want to upload**.
+This is referred to as the **source collection UUID**.
+
+In most cases, this will be either:
+- An **institutional Globus endpoint**, or
+- **Globus Connect Personal (GCP)** pointing to a local directory on your machine
+
+---
+
+#### Option A — Use Globus Connect Personal (recommended for local files)
+
+If your data is on your **local machine** and you do not already have a Globus collection:
+
+1. Install **Globus Connect Personal (GCP)**:
+   👉 https://www.globus.org/globus-connect-personal
+
+2. Start Globus Connect Personal.
+
+3. During setup, ensure GCP is configured to expose the **local directory that contains the data you want to upload**  
+   (for example, `~/data/`, `/mnt/storage/project_x/`, etc.).
+
+   > ⚠️ Only directories explicitly exposed by GCP will be visible to Globus transfers.
+
+4. Once running, GCP will appear as a collection in the Globus web interface.
+
+
+#### Retrieve the source collection UUID (via Globus Web UI)
+
+1. Open the Globus web app:  
+   👉 https://app.globus.org
+
+2. Log in with your institutional or ORCID-backed Globus account.
+
+3. Open **File Manager**.
+
+4. In the **Collection** selector (top left):
+  - Choose your institutional endpoint, **or**
+  - Select *Globus Connect Personal*.
+
+5. Click the **ⓘ (information)** icon next to the collection name.
+
+6. Copy the **Collection UUID**.
+
+This is your **source collection UUID**.
+
+---
+
+
+#### Option B — Create / use a personal Globus endpoint
 ```shell script
 globus endpoint search "$(hostname)"
 globus endpoint local-id
 ```
-Copy this value into:
-* `MORPHIC_SRC_COLLECTION_UUID` (environment variable), or
-* the CLI config when prompted (`src_collection_uuid`).
-
-### 1.3 Identify the EBI destination endpoint
-Your administrator provides a UUID, for example:
-```shell script
-MORPHIC_EBI_COLLECTION_UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-```
-This is the private on-prem storage where files will land.
 
 ## 2. Authentication & Configuration (Globus-only — Cognito no longer required)
 As of the new Globus integration, morphic-util no longer uses or requires AWS Cognito.
@@ -353,7 +451,7 @@ This will:
 * Store a long-lived refresh token in ~/.morphic-util/config.json
 (used automatically for future runs, no need to re-login each time)
 
-### 2.3 Register your source collection (where your files live)
+### 2.2 Register your source collection (where your files live)
 ```shell script
 morphic-util config-globus --src-collection-uuid <YOUR_SOURCE_COLLECTION_UUID>
 ```
@@ -375,6 +473,19 @@ morphic-util submit --type dataset --file my_dataset.json --dataset-type raw
 morphic-util select <DATASET_ID>
 ```
 The dataset ID = upload area name.
+
+Notes:
+- You can skip linking the Dataset to a Study at this stage — just press **Enter** when prompted.
+- `dataset.json` can be a dummy JSON file for now, for example:
+
+```json
+{
+  "title": "Sample Processed Dataset",
+  "description": "A processed dataset derived from raw data.",
+  "contributors": ["Name Surname"],
+  "institution": "EMBL-EBI"
+}
+```
 
 ## 3.1 Uploading Files with Globus
 
@@ -411,6 +522,10 @@ morphic-util submit-file \
 ```
 This registers biomaterials, protocols, library preps, and sequencing files.
 
+Notes:
+- metadata.xlsx is the spreadsheet containing the dataset metadata.
+- An example spreadsheet for testing purposes is available [here](https://docs.google.com/spreadsheets/d/1zoRYWwzqoh2Qa17P_tb227rsbZbh267k/edit?gid=45802078#gid=45802078)
+
 ### 5. Globus-backed delete
 The delete command can use the Provider API + Globus backend for asynchronous deletion of files from the dataset’s upload area.
 ```shell script
@@ -428,11 +543,10 @@ Delete all contents of the current dataset area
 Delete specific file(s) or subpaths within the dataset area
 
 ## 4. Full User Journey Summary
-1. Authenticate with Morphic (Cognito)
-2. Authenticate with Globus (one-time login for transfer)
-3. Configure Globus source endpoint (your local/GCP collection UUID)
-4. Create dataset (UI or CLI) → backend creates upload folder on EBI private storage 
-5. Select dataset as upload target 
-6. Upload data files via Globus (morphic-util upload)
-7. Verify uploaded files (morphic-util list or UI)
-8. Submit metadata referencing uploaded files
+1. Authenticate with Globus (one-time login).
+2. Configure the Globus source collection (local machine via GCP or institutional endpoint).
+3. Create a Dataset (via UI or CLI) — this provisions the upload area on EMBL-EBI private storage.
+4. Select the Dataset as the active upload target.
+5. Upload data files via Globus (`morphic-util upload`).
+6. Verify uploaded files (`morphic-util list` or via the UI).
+7. Submit spreadsheet metadata referencing the uploaded files.

@@ -71,6 +71,9 @@ def parse_args(args):
     parser = argparse.ArgumentParser(description=NAME)
     parser.add_argument('--version', '-v', action='version', version=f'{NAME} {VERSION}')
 
+    parser.add_argument("--verbose", action="store_true", help="Show INFO logs")
+    parser.add_argument("--debug", action="store_true", help="Show DEBUG logs (URLs, responses)")
+
     cmd_parser = parser.add_subparsers(title='command', dest='command')
 
     cmd_parser.required = True

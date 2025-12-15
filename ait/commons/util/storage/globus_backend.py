@@ -16,6 +16,9 @@ from globus_sdk.scopes import TransferScopes
 from globus_sdk import AccessTokenAuthorizer
 from os.path import basename
 
+import logging
+log = logging.getLogger("morphic-util")
+
 from ait.commons.util.user_profile import get_profile
 from ait.commons.util.settings.morphic_util import (
     BASE_URL

@@ -1,7 +1,8 @@
 import time
 import requests
 from requests.exceptions import ConnectionError, Timeout
-
+import logging
+log = logging.getLogger("morphic-util")
 
 def request_with_retries(method, url, headers, params=None, json_data=None, retries=3, timeout=30):
     """
@@ -70,14 +71,14 @@ class ProviderApi:
         status_code = response.status_code
 
         if status_code not in (200, 201, 202, 204):
-            print(f"Received {status_code} while executing {method} on {url}")
+            log.info(f"Received {status_code} while executing {method} on {url}")
             if method == 'DELETE':
                 return None
             else:
                 # This raises the HTTPError
                 raise response.raise_for_status()
         else:
-            print(f"Received {status_code} while executing {method} on {url}")
+            log.info(f"Received {status_code} while executing {method} on {url}")
 
         if method == 'POST' and data_type_in_hal_link:
             response_data = response.json()

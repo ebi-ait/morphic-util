@@ -26,7 +26,20 @@ from ait.commons.util.command.config_globus import CmdConfigGlobus
 
 # storage factory (returns AwsStorage or GlobusStorage based on env / config)
 from ait.commons.util.storage.factory import build_storage
+import logging
 
+def setup_logging(args):
+    level = logging.WARNING  # default: quiet
+
+    if getattr(args, "debug", False):
+        level = logging.DEBUG
+    elif getattr(args, "verbose", False):
+        level = logging.INFO
+
+    logging.basicConfig(
+        level=level,
+        format="%(levelname)s: %(message)s"
+    )
 
 def _globus_config_present() -> bool:
     """
@@ -67,6 +80,7 @@ class Cmd:
     def __init__(self, args):
 
         # self.check_version()
+        setup_logging(args)
 
         # 1) Cognito config (unchanged)
         if args.command == "config":

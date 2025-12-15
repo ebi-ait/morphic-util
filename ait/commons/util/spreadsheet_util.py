@@ -5,6 +5,8 @@ import json
 import numpy as np
 import json
 import requests
+import logging
+log = logging.getLogger("morphic-util")
 from ait.commons.util.settings.morphic_util import (
     BASE_URL
 )
@@ -685,9 +687,9 @@ def process_library_preparations(cell_lines, differentiated_cell_lines, library_
 
 def find_existing_biomaterial_by_label(label, ingest_api_base):
     url = f"{ingest_api_base}/biomaterials/search/findByContentLabel?label={label}"
-    print(f"Find_existing_biomaterial_by_label URL '{url}'")
+    log.debug("Find_existing_biomaterial_by_label URL %s", url)
     response = requests.get(url)
-    print(f"Find_existing_biomaterial_by_label response '{response}'")
+    log.debug("Find_existing_biomaterial_by_label response %s", response)
     if response.status_code == 200:
         results = response.json()
         biomaterials = results.get("_embedded", {}).get("biomaterials", [])
@@ -822,11 +824,11 @@ class SpreadsheetSubmitter:
             label = row['clonal_cell_line.label']
             parent_name = row.get('clonal_cell_line.parental_cell_line_name')
 
-            print(f"Examining clonal cell line '{label}'")
+            log.debug("Examining clonal cell line '%s'", label)
             existing = find_existing_biomaterial_by_label(label, ingest_api_base=BASE_URL)
 
             if existing:
-                print(f"Reusing existing clonal cell line '{label}'")
+                log.info("Reusing existing clonal cell line '%s'", label)
                 cell_line = CellLine.from_existing(existing)
                 # Update expression alteration ID if it's provided in the spreadsheet
                 ea_id = row.get('expression_alteration.label')

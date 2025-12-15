@@ -1,27 +1,35 @@
-# Import necessary modules/classes from ait.commons.util package
 import os
 import sys
+import logging
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
+
 from ait.commons.util.storage.factory import build_storage
 from ait.commons.util.command.list import CmdList
-from ait.commons.util.command.submit import CmdSubmit, get_entity_id_from_hal_link, create_new_submission_envelope
+from ait.commons.util.command.submit import (
+    CmdSubmit,
+    get_entity_id_from_hal_link,
+    create_new_submission_envelope,
+)
 from ait.commons.util.command.upload import CmdUpload
 from ait.commons.util.user_profile import get_profile
 from ait.commons.util.provider_api_util import ProviderApi
-from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter, ValidationError, \
-    merge_library_preparation_sequencing_file, merge_cell_line_and_differentiated_cell_line, \
-    merge_differentiated_cell_line_and_library_preparation, SubmissionError, process_library_preparations
-from ait.commons.util.settings.morphic_util import (
-    BASE_URL
+from ait.commons.util.spreadsheet_util import (
+    SpreadsheetSubmitter,
+    ValidationError,
+    merge_library_preparation_sequencing_file,
+    merge_cell_line_and_differentiated_cell_line,
+    merge_differentiated_cell_line_and_library_preparation,
+    SubmissionError,
+    process_library_preparations,
 )
 
-from ait.commons.util.storage.globus_backend import (
-    _load_globus_config,
-    _get_ingest_bearer_token,
-)
+from ait.commons.util.settings.morphic_util import BASE_URL
+from ait.commons.util.storage.globus_backend import _load_globus_config, _get_ingest_bearer_token
+
+log = logging.getLogger("morphic-util")
 
 try:
     _GLOBUS_CFG = _load_globus_config()
@@ -29,55 +37,121 @@ except Exception:
     _GLOBUS_CFG = {}
 
 
-# Define a class for handling submission of a command file
-import os
+# -----------------------------
+# Logging setup
+# -----------------------------
+def setup_logging(args):
+    """
+    Call once early (ideally in CLI entrypoint).
+    If you can't, calling in CmdSubmitFile.__init__ is okay as a fallback.
+    """
+    level = logging.WARNING
+    if getattr(args, "debug", False):
+        level = logging.DEBUG
+    elif getattr(args, "verbose", False):
+        level = logging.INFO
+
+    # basicConfig is a no-op if logging already configured elsewhere.
+    logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
+
+
+# -----------------------------
+# Validation report formatting
+# -----------------------------
+def format_validation_report(*, dataset, spreadsheet, parsed_summary=None, errors=None, warnings=None):
+    errors = errors or []
+    warnings = warnings or []
+
+    lines = []
+    lines.append(
+        f"\n❌ Validation failed ({len(errors)} error{'s' if len(errors)!=1 else ''}, "
+        f"{len(warnings)} warning{'s' if len(warnings)!=1 else ''}) — dataset {dataset}"
+    )
+
+    if spreadsheet:
+        lines.append(f"   Spreadsheet: {os.path.basename(spreadsheet)}")
+
+    if parsed_summary:
+        lines.append("")
+        lines.append("Parsed summary")
+        for k, v in parsed_summary.items():
+            lines.append(f"  - {k}: {v}")
+
+    if errors:
+        lines.append("")
+        lines.append("ERRORS (must fix)")
+        for e in errors:
+            lines.append("  " + str(e).replace("\n", "\n  "))
+
+    if warnings:
+        lines.append("")
+        lines.append("WARNINGS (check)")
+        for w in warnings:
+            lines.append("  " + str(w).replace("\n", "\n  "))
+
+    lines.append("")
+    lines.append("Next steps")
+    lines.append("  1) Upload missing files or correct filenames in the spreadsheet.")
+    lines.append("  2) Remove/ignore extra files, or reference them in the spreadsheet if intended.")
+    return "\n".join(lines)
+
+
+def _normalize_list_entry(entry) -> str | None:
+    """
+    CmdList output can be:
+      - strings
+      - tuples/lists
+    Normalize to a "path-like first field" string.
+    """
+    if entry is None:
+        return None
+
+    if isinstance(entry, (tuple, list)) and entry:
+        candidate = str(entry[0]).strip()
+    else:
+        raw = str(entry).strip()
+        if not raw:
+            return None
+        candidate = raw.split()[0].strip()
+
+    if not candidate:
+        return None
+    return candidate
+
 
 def validate_sequencing_files(
     sequencing_files,
     list_of_files_in_upload_area,
     dataset,
-    errors,
     spreadsheet_filename=None,
 ):
     """
-    - Ensure every sequencing file listed in the spreadsheet exists in the upload area.
-    - Return a list of *extra* files present in the upload area but not referenced in the spreadsheet.
-
-    sequencing_files: list of SequencingFile objects
-    list_of_files_in_upload_area: raw entries from CmdList
-    dataset: dataset id (str)
-    errors: list to which validation error messages are appended
-    spreadsheet_filename: basename of the spreadsheet file, to exclude from extra files
+    Returns:
+      (errors, warnings) where each is a list[str].
     """
-
-    sheet_files = set()
-    for sequencing_file in (sequencing_files or []):
-        file_name = (getattr(sequencing_file, "file_name", "") or "").strip()
-        if file_name:
-            sheet_files.add(file_name)
+    sheet_files = {
+        (getattr(sf, "file_name", "") or "").strip()
+        for sf in (sequencing_files or [])
+        if (getattr(sf, "file_name", "") or "").strip()
+    }
 
     storage_basenames = set()
-
     for entry in (list_of_files_in_upload_area or []):
-        raw = str(entry).strip()
-        if not raw:
+        candidate = _normalize_list_entry(entry)
+        if not candidate:
             continue
 
-        if raw.startswith("Name ") or raw.startswith("Name\t"):
-            continue
-        if raw.startswith("---") or set(raw) == {"-"}:
+        # skip table headers / separators (in case CmdList returns such lines)
+        if candidate.startswith("Name") or candidate.startswith("---"):
             continue
 
-        if isinstance(entry, (tuple, list)):
-            candidate = str(entry[0]).strip()
-        else:
-            candidate = raw.split()[0].strip()
-
+        # only consider "file-like" entries
         if "." not in candidate:
             continue
 
         basename = os.path.basename(candidate)
 
+        # ignore generated / non-data artifacts
         if spreadsheet_filename and basename == spreadsheet_filename:
             continue
         if basename.startswith("submission_result_") and basename.lower().endswith(".xlsx"):
@@ -88,102 +162,56 @@ def validate_sequencing_files(
     missing = sorted(sheet_files - storage_basenames)
     extra = sorted(storage_basenames - sheet_files)
 
+    errors: list[str] = []
+    warnings: list[str] = []
+
     if missing:
-        header = (
-            f"{len(missing)} sequencing files from the spreadsheet are missing in the "
-            f"upload area for dataset '{dataset}':"
+        errors.append(
+            f"Missing sequencing files in upload area ({len(missing)}):\n"
+            + "\n".join([f"  - {m}" for m in missing])
         )
-        details = "\n  - " + "\n  - ".join(missing)
-        errors.append(header + details)
 
-    return extra
-
-
-def warn_unreferenced_files(
-    sequencing_files,
-    list_of_files_in_upload_area,
-    dataset,
-    spreadsheet_path=None,
-):
-    """
-    Warn if there are files in the upload area that are *not* referenced
-    in the 'Sequence file' sheet of the spreadsheet.
-
-    This is a non-fatal warning, meant to catch:
-      - accidentally renamed / misnamed files
-      - leftover files from previous runs
-    """
-
-    storage_basenames = set()
-    for entry in (list_of_files_in_upload_area or []):
-        raw = str(entry).strip()
-        if not raw:
-            continue
-        first_field = raw.split()[0]
-        storage_basenames.add(os.path.basename(first_field))
-
-    if not storage_basenames:
-        return
-
-    referenced = set()
-    for sf in (sequencing_files or []):
-        fn = (getattr(sf, "file_name", "") or "").strip()
-        if fn:
-            referenced.add(fn)
-
-    ignore_names = set()
-
-    if spreadsheet_path:
-        ignore_names.add(os.path.basename(spreadsheet_path))
-
-    for name in list(storage_basenames):
-        if name.startswith("submission_result_") and name.endswith(".xlsx"):
-            ignore_names.add(name)
-
-    unreferenced = storage_basenames - referenced - ignore_names
-
-    if unreferenced:
-        print(
-            "\n⚠ WARNING: The following files are present in the dataset "
-            f"upload area for '{dataset}' but are NOT referenced in the "
-            "spreadsheet 'Sequence file' sheet."
+    if extra:
+        warnings.append(
+            f"Extra files in upload area not referenced by spreadsheet ({len(extra)}):\n"
+            + "\n".join([f"  - {x}" for x in extra])
         )
-        print("   This may indicate misnamed or renamed files.\n")
-        for f in sorted(unreferenced):
-            print(f"   - {f}")
-        print("")
+
+    return errors, warnings
+
 
 def get_content(unique_value):
     return {"content": unique_value}
 
 
-def _create_expression_alterations(submission_instance,
-                                   submission_envelope_id,
-                                   access_token,
-                                   expression_alterations,
-                                   expression_alterations_df):
+def _create_expression_alterations(
+    submission_instance,
+    submission_envelope_id,
+    access_token,
+    expression_alterations,
+    expression_alterations_df,
+):
     expression_alterations_entity_id_column_name = "Id"
 
     if expression_alterations_entity_id_column_name not in expression_alterations_df.columns:
         expression_alterations_df[expression_alterations_entity_id_column_name] = np.nan
 
     for expression_alteration in expression_alterations:
-        # Submit the expression alteration and retrieve the ID
         expression_alteration_id = submission_instance.use_existing_envelope_and_submit_entity(
-            'process',
-            expression_alteration.to_dict(),  # Convert the object to a dictionary for submission
+            "process",
+            expression_alteration.to_dict(),
             submission_envelope_id,
-            access_token
+            access_token,
         )
-        # Set the retrieved ID in the ExpressionAlterationStrategy object
         expression_alteration.id = expression_alteration_id
+
         expression_alterations_df[expression_alterations_entity_id_column_name] = (
-            expression_alterations_df[expression_alterations_entity_id_column_name]
-            .astype(object))
+            expression_alterations_df[expression_alterations_entity_id_column_name].astype(object)
+        )
+
         expression_alterations_df.loc[
-            expression_alterations_df[
-                'expression_alteration.label'] == expression_alteration.expression_alteration_id,
-            expression_alterations_entity_id_column_name
+            expression_alterations_df["expression_alteration.label"] == expression_alteration.expression_alteration_id,
+            expression_alterations_entity_id_column_name,
         ] = expression_alteration_id
 
     return expression_alterations
@@ -195,69 +223,56 @@ class CmdSubmitFile:
     SUBMISSION_ENVELOPE_BASE_URL = f"{BASE_URL}/submissionEnvelopes"
 
     def __init__(self, args):
-        """
-        Initialize CmdSubmitFile instance.
-
-        Args:
-            args: Command-line arguments passed to the script.
-        """
         self.args = args
 
-        # Still load the profile – needed by build_storage etc.
-        self.user_profile = get_profile('morphic-util')
+        # If CLI entrypoint didn't call setup_logging, do it here (safe-ish fallback)
+        setup_logging(args)
+
+        self.user_profile = get_profile("morphic-util")
 
         # Prefer Globus access token for Provider API calls
         try:
             self.access_token = _get_ingest_bearer_token(_GLOBUS_CFG)
-            print("[submit-file] Using Globus access token for Provider API calls")
-        except Exception as e:
-            # Fallback to legacy Cognito token if Globus config is missing/broken
-            print(f"[submit-file] Globus auth not available, using profile access token")
+            log.info("Using Globus access token for Provider API calls")
+        except Exception:
+            log.info("Globus auth not available; using profile access token")
             self.access_token = self.user_profile.access_token
 
         self.storage = build_storage(self.user_profile)
         self.provider_api = ProviderApi(self.BASE_URL)
-        self.validation_errors = []
-        self.submission_errors = []
+
+        self.validation_errors: list[str] = []
+        self.validation_warnings: list[str] = []
+
+        self.submission_errors: list[str] = []
         self.submission_envelope_id = None
 
-        # Read and store the context argument (if provided)
-        # For UCSF datasets, you might pass --context unperturbed_multiple.
         self.context = getattr(args, "context", None)
 
-        # Assign and validate required arguments
-        self.action = self._get_required_arg('action', "Submission action (ADD, MODIFY or DELETE) is mandatory")
-        self.dataset = self._get_required_arg('dataset', (
-            "Dataset is mandatory to be registered before submitting dataset metadata. "
-            "Please submit your study using the submit option, register your dataset using "
-            "the submit option, and link your dataset to your study before proceeding with this submission."
-        ))
+        self.action = self._get_required_arg("action", "Submission action (ADD, MODIFY or DELETE) is mandatory")
+        self.dataset = self._get_required_arg(
+            "dataset",
+            (
+                "Dataset is mandatory to be registered before submitting dataset metadata. "
+                "Please submit your study using the submit option, register your dataset using "
+                "the submit option, and link your dataset to your study before proceeding with this submission."
+            ),
+        )
 
         if self.dataset:
             try:
-                self.provider_api.get(f"{self.BASE_URL}/datasets/{self.dataset}",
-                                      self.access_token)
-            except Exception as e:
+                self.provider_api.get(f"{self.BASE_URL}/datasets/{self.dataset}", self.access_token)
+            except Exception:
                 print(f"Dataset does not exist {self.dataset}")
                 sys.exit(1)
 
-        # Validate file argument only if action is not DELETE
-        if self.action != 'DELETE':
-            self.file = self._get_required_arg('file', "File is mandatory")
+        if self.action != "DELETE":
+            self.file = self._get_required_arg("file", "File is mandatory")
         else:
+            self.file = None
             print(f"Deleting dataset {self.dataset}")
 
     def _get_required_arg(self, attr_name, error_message):
-        """
-        Helper function to get a required argument and print an error message if it's missing.
-
-        Args:
-            attr_name (str): The name of the attribute to check in self.args.
-            error_message (str): The error message to print if the attribute is missing.
-
-        Returns:
-            The value of the attribute if it exists, otherwise None.
-        """
         value = getattr(self.args, attr_name, None)
         if value is None:
             print(error_message)
@@ -265,9 +280,6 @@ class CmdSubmitFile:
         return value
 
     def run(self):
-        """
-        Execute the command file submission process.
-        """
         submission_instance = CmdSubmit(self)
 
         try:
@@ -282,31 +294,26 @@ class CmdSubmitFile:
                     return True, "SUBMISSION IS SUCCESSFUL."
                 except Exception as e:
                     return self._delete_actions(self.submission_envelope_id, submission_instance, e)
+
         except KeyboardInterrupt:
-            # Handle the interruption and exit gracefully
             print("\nProcess interrupted by user. Exiting gracefully...")
             self._delete_actions(self.submission_envelope_id, submission_instance, None)
-            sys.exit(0)  # Exit with a zero status code indicating a clean exit
+            sys.exit(0)
         except Exception as e:
-            # Handle any other unexpected exceptions
             print(f"An unexpected error occurred: {str(e)}")
             self._delete_actions(self.submission_envelope_id, submission_instance, None)
-            sys.exit(1)  # Exit with a non-zero status code indicating an error
+            sys.exit(1)
 
     def _is_delete_action(self):
-        """Check if the current action is 'DELETE'."""
-        return self.action.lower() == 'delete'
+        return str(self.action).lower() == "delete"
 
     def _handle_delete(self, submission_instance):
-        """Handle the deletion of a dataset."""
-        self.file = None
         submission_instance.delete_dataset(self.dataset, self.access_token)
         return True, None
 
     def _list_files_in_upload_area(self):
-        """List files in the upload area."""
         list_instance = CmdList(self.storage, self.args)
-        return list_instance.list_bucket_contents_and_return(self.dataset, '')
+        return list_instance.list_bucket_contents_and_return(self.dataset, "")
 
     def _process_submission(self, submission_instance, list_of_files_in_upload_area):
         try:
@@ -399,32 +406,20 @@ class CmdSubmitFile:
                                             submission_instance,
                                             None)
         except ValidationError as e:
-            print("Validation Error:")
-            for msg in e.errors:
+            # If we raise ValidationError([report]), print it cleanly:
+            for msg in getattr(e, "errors", []) or ["Validation Error"]:
                 print(msg)
-
-            # If we collected extra (unreferenced) files, also show them as a warning
-            extra_files = getattr(self, "extra_files", None)
-            if extra_files:
-                print()
-                print(
-                    f"⚠ WARNING: The following files are present in the dataset upload area for "
-                    f"'{self.dataset}' but are NOT referenced in the spreadsheet 'Sequence file' sheet.\n"
-                    f"   This may indicate misnamed or renamed files.\n"
-                )
-                for fn in extra_files:
-                    print(f"   - {fn}")
-                print()
-
             sys.exit(1)
+
         except SubmissionError as e:
             print(f"Submission Error: {e.errors}")
             self._delete_actions(self.submission_envelope_id, submission_instance, e)
             sys.exit(1)
+
         except Exception as e:
             print(f"An unexpected error occurred during submission processing: {e}")
             self._delete_actions(self.submission_envelope_id, submission_instance, e)
-            raise e  # Re-raise the exception to propagate it upwards
+            raise
 
     def _handle_parent_cell_line(self, submission_instance, parent_cell_line_name):
         """Handles the creation of a parent cell line."""
@@ -597,37 +592,50 @@ class CmdSubmitFile:
             return None
 
     def _validate_and_upload(self, parsed_data, list_of_files_in_upload_area):
-        try:
-            sequencing_files = parsed_data.get("sequencing_files") if parsed_data else []
-        except Exception:
-            sequencing_files = []
+        sequencing_files = (parsed_data or {}).get("sequencing_files") or []
+        spreadsheet_basename = os.path.basename(self.file) if self.file else None
 
-        self.extra_files = validate_sequencing_files(
+        file_errors, file_warnings = validate_sequencing_files(
             sequencing_files=sequencing_files,
             list_of_files_in_upload_area=list_of_files_in_upload_area,
             dataset=self.dataset,
-            errors=self.validation_errors,
-            spreadsheet_filename=os.path.basename(self.file) if getattr(self, "file", None) else None,
+            spreadsheet_filename=spreadsheet_basename,
         )
 
-        if self.validation_errors:
-            raise ValidationError(self.validation_errors)
+        # Combine any spreadsheet-structural errors already gathered + file presence errors
+        all_errors = list(self.validation_errors) + list(file_errors)
+        self.validation_warnings = list(file_warnings)
 
-        if self.extra_files:
-            print(
-                f"⚠ WARNING: The following files are present in the dataset upload area for "
-                f"'{self.dataset}' but are NOT referenced in the spreadsheet 'Sequence file' sheet.\n"
-                f"   This may indicate misnamed or renamed files.\n"
+        if all_errors:
+            report = format_validation_report(
+                dataset=self.dataset,
+                spreadsheet=self.file,
+                parsed_summary={
+                    "cell lines": len((parsed_data or {}).get("cell_lines") or []),
+                    "library preparations": len((parsed_data or {}).get("library_preparations") or []),
+                    "sequencing files": len(sequencing_files),
+                } if parsed_data else None,
+                errors=all_errors,
+                warnings=self.validation_warnings,
             )
-            for fn in self.extra_files:
-                print(f"   - {fn}")
-            print()
+            raise ValidationError([report])
 
-        print(f"File {self.file} is validated successfully. Initiating submission")
-        print(f"File {self.file} being uploaded to storage")
+        # Validation succeeded: optionally show warnings (or only show in --verbose)
+        if self.validation_warnings:
+            # If you want these only in verbose mode, swap print -> log.info
+            for w in self.validation_warnings:
+                print(f"⚠ WARNING: {w}\n")
 
-        upload_instance = CmdUpload(self.storage, self.args)
-        upload_instance.upload_file(self.dataset, self.file, os.path.basename(self.file), 1, 1)
+        print(f"✅ Spreadsheet + upload area validated — dataset {self.dataset}")
+        print(f"Uploading {spreadsheet_basename} to storage...")
+
+        CmdUpload(self.storage, self.args).upload_file(
+            self.dataset,
+            self.file,
+            spreadsheet_basename,
+            1,
+            1,
+        )
 
     def _is_add_action(self):
         """Check if the current action is 'ADD'."""

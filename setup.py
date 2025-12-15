@@ -50,7 +50,7 @@ setup(
         'Programming Language :: Python :: 3.11',
     ],
     platforms=['MacOS X', 'Posix'],
-    packages=['ait.commons.util', 'ait.commons.util.settings', 'ait.commons.util.command'],
+    packages=find_packages(include=['ait*']),
     include_package_data=True,
     install_requires=ALL_REQS,
     entry_points={

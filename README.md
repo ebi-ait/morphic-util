@@ -371,7 +371,7 @@ Expected:
 * No traceback
 * Version shown (e.g. 1.0.5)
 * Commands listed (e.g. config-globus, globus-login, create, select, upload, submit-file, etc.)
-
+---
 ## 1. Globus Setup (one time only)
 
 ### 1.1 Identify your Globus source collection (where your files live)
@@ -429,7 +429,7 @@ This is your **source collection UUID**.
 globus endpoint search "$(hostname)"
 globus endpoint local-id
 ```
-
+---
 ## 2. Authentication & Configuration (Globus-only — Cognito no longer required)
 As of the new Globus integration, morphic-util no longer uses or requires AWS Cognito.
 All authentication for both:
@@ -463,30 +463,47 @@ Configuration is stored at:
 ```shell script
 ~/.morphic-util/config.json
 ```
-
-## 3. Creating a Dataset & Upload Area
+---
+## 3. Creating a Study, Dataset & Upload Area
 ### ⚠️ Important: User role requirement
 
 When you first authenticate with **morphic-util**, your account is registered as a **Guest**.
 - **Guests can** authenticate and use Globus
-- **Guests cannot** create datasets or upload data
+- **Guests cannot** create studies, datasets or upload data
 - Attempting to create a dataset as a Guest will return **403 Forbidden**
 
 To create datasets and upload files, your account must be upgraded to a **Contributor/ Wrangler**.
 
 ➡️ If you encounter a **403 Forbidden** error when creating a dataset, please contact the MorPhiC team (e.g. **alexkoci@ebi.ac.uk**) to have your role upgraded.
 
-
+### 3.1 Create a Study (optional but recommended)
 ```shell script
-morphic-util submit --type dataset --file my_dataset.json --dataset-type raw
-morphic-util select <DATASET_ID>
+morphic-util submit --type study --file study.json
 ```
-The dataset ID = upload area name.
+Example `study.json` (can be minimal):
+```shell script
+{
+    "title": "Sample Study",
+    "description": "Example study created via morphic-util",
+    "contributors": ["Name Surname"],
+    "institution": "EMBL-EBI"
+}
+```
+ℹ️ You can create datasets without a study and link them later.
 
-Notes:
-- You can skip linking the Dataset to a Study at this stage — just press **Enter** when prompted.
-- `dataset.json` can be a dummy JSON file for now, for example:
+### 3.2 Create a Dataset & Upload Area (with optional Study linking)
 
+If you already have a Study ID, you can link the dataset at creation time:
+```shell script
+morphic-util submit \
+--type dataset \
+--file dataset.json \
+--study <STUDY_ID> \
+--dataset-type raw
+```
+- The dataset ID is also the upload area name
+
+Example `dataset.json`:
 ```json
 {
   "title": "Sample Processed Dataset",
@@ -495,33 +512,54 @@ Notes:
   "institution": "EMBL-EBI"
 }
 ```
+### 3.3 Create a Dataset & Upload Area (without linking to a Study)
+```shell script
+morphic-util submit --type dataset --file dataset.json --dataset-type raw
+```
+- When prompted to link to a study, you may press Enter to skip
+---
+## 4. Uploading Files with Globus
 
-## 3.1 Uploading Files with Globus
-
-### 1. Select active dataset upload area
+### 4.1. Select active dataset upload area
 ```shell script
 morphic-util select <DATASET_ID>
 ```
 
-### 2. Upload files
+### 4.2. Upload a single file
 ```shell script
 morphic-util upload myfile.fastq.gz
 ```
 
+### 4.3 Upload a folder recursively (bulk upload)
+You can upload all files within a directory in one command:
+```shell script
+morphic-util upload path/to/files/
+```
+This will recursively discover and upload all files under the given folder.
+
 The CLI will:
 1. Resolve dataset folder via Provider API
 2. Auto-activate Globus endpoints
-3. Create missing directories if needed
-4. Submit a Globus Transfer Task
-5. Stream live progress (bytes, rate, ETA)
-6. Confirm completion
+3. Submit a Globus Transfer Task
+4. Stream live progress (bytes, rate, ETA)
+5. Confirm completion
+---
+#### ⚠️ Important constraint on source paths
 
-### 3. List uploaded files
+All files and directories you upload must be located under the source root directory configured during Globus setup
+(for example, the root of your GCP or local Globus collection).
+
+- Paths outside the configured Globus collection cannot be accessed
+- Absolute paths outside the collection will fail
+- Relative paths are resolved within the configured collection root
+---
+
+### 4.4. List uploaded files
 ```shell script
 morphic-util list
 ```
 
-### 4. Submitting Metadata After Upload
+## 5. Submitting Metadata After Upload
 Once files are uploaded:
 ```shell script
 morphic-util submit-file \
@@ -532,10 +570,10 @@ morphic-util submit-file \
 This registers biomaterials, protocols, library preps, and sequencing files.
 
 Notes:
-- metadata.xlsx is the spreadsheet containing the dataset metadata.
+- `metadata.xlsx` is the spreadsheet containing the dataset metadata.
 - An example spreadsheet for testing purposes is available [here](https://docs.google.com/spreadsheets/d/1zoRYWwzqoh2Qa17P_tb227rsbZbh267k/edit?gid=45802078#gid=45802078)
 
-### 5. Globus-backed delete
+## 6. Globus-backed delete
 The delete command can use the Provider API + Globus backend for asynchronous deletion of files from the dataset’s upload area.
 ```shell script
 morphic-util delete -g -a
@@ -551,7 +589,7 @@ Delete all contents of the current dataset area
 * `PATH [...]`
 Delete specific file(s) or subpaths within the dataset area
 
-## 4. Full User Journey Summary
+## 7. Full User Journey Summary
 1. Authenticate with Globus (one-time login).
 2. Configure the Globus source collection (local machine via GCP or institutional endpoint).
 3. Create a Dataset (via UI or CLI) — this provisions the upload area on EMBL-EBI private storage.

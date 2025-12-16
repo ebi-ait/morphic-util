@@ -41,19 +41,13 @@ except Exception:
 # Logging setup
 # -----------------------------
 def setup_logging(args):
-    """
-    Call once early (ideally in CLI entrypoint).
-    If you can't, calling in CmdSubmitFile.__init__ is okay as a fallback.
-    """
     level = logging.WARNING
     if getattr(args, "debug", False):
         level = logging.DEBUG
     elif getattr(args, "verbose", False):
         level = logging.INFO
 
-    # basicConfig is a no-op if logging already configured elsewhere.
     logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
-
 
 # -----------------------------
 # Validation report formatting
@@ -225,7 +219,6 @@ class CmdSubmitFile:
     def __init__(self, args):
         self.args = args
 
-        # If CLI entrypoint didn't call setup_logging, do it here (safe-ish fallback)
         setup_logging(args)
 
         self.user_profile = get_profile("morphic-util")
@@ -406,7 +399,6 @@ class CmdSubmitFile:
                                             submission_instance,
                                             None)
         except ValidationError as e:
-            # If we raise ValidationError([report]), print it cleanly:
             for msg in getattr(e, "errors", []) or ["Validation Error"]:
                 print(msg)
             sys.exit(1)
@@ -620,9 +612,7 @@ class CmdSubmitFile:
             )
             raise ValidationError([report])
 
-        # Validation succeeded: optionally show warnings (or only show in --verbose)
         if self.validation_warnings:
-            # If you want these only in verbose mode, swap print -> log.info
             for w in self.validation_warnings:
                 print(f"⚠ WARNING: {w}\n")
 

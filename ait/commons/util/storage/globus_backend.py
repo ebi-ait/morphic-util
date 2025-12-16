@@ -553,7 +553,7 @@ class GlobusStorage(Storage):
 
                     bytes_done = t.get("bytes_transferred")
                     bytes_total = t.get("bytes_expected") or guessed_total
-                    files_total_task = t.get("files") # Renamed to avoid confusion
+                    files_total_task = t.get("files")
                     files_done_task = t.get("files_transferred") if t.get("files_transferred") is not None else 0
 
                     now = time.time()
@@ -632,7 +632,6 @@ class GlobusStorage(Storage):
 
             for entry in file_data:
                 if not isinstance(entry, dict):
-                    # Defensive fallback
                     name = str(entry)
                     file_type = "file"
                     size = None

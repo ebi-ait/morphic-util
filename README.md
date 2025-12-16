@@ -577,7 +577,7 @@ Notes:
 The delete command can use the Provider API + Globus backend for asynchronous deletion of files from the dataset’s upload area.
 ```shell script
 morphic-util delete -g -a
-morphic-util delete -g path/to/file1 path/to/file2
+morphic-util delete -g file1 file2
 ```
 Options:
 * `-g, --globus`

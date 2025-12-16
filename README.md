@@ -464,10 +464,19 @@ Configuration is stored at:
 ~/.morphic-util/config.json
 ```
 
-## 3. Creating a Dataset & Upload Area (via UI or CLI)
-In the UI:
-* Create a dataset → backend automatically creates an upload folder on the EBI collection (via Globus API).
-In the CLI:
+## 3. Creating a Dataset & Upload Area
+### ⚠️ Important: User role requirement
+
+When you first authenticate with **morphic-util**, your account is registered as a **Guest**.
+- **Guests can** authenticate and use Globus
+- **Guests cannot** create datasets or upload data
+- Attempting to create a dataset as a Guest will return **403 Forbidden**
+
+To create datasets and upload files, your account must be upgraded to a **Contributor/ Wrangler**.
+
+➡️ If you encounter a **403 Forbidden** error when creating a dataset, please contact the MorPhiC team (e.g. **alexkoci@ebi.ac.uk**) to have your role upgraded.
+
+
 ```shell script
 morphic-util submit --type dataset --file my_dataset.json --dataset-type raw
 morphic-util select <DATASET_ID>

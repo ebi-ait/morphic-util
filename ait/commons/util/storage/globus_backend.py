@@ -10,7 +10,6 @@ import urllib.request
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# Third-Party Libraries
 import globus_sdk as g
 from globus_sdk.scopes import TransferScopes
 from globus_sdk import AccessTokenAuthorizer
@@ -24,7 +23,6 @@ from ait.commons.util.settings.morphic_util import (
     BASE_URL
 )
 
-# Placeholder Definitions for Type Hinting
 class Storage:
     pass
 ProgressCb = callable
@@ -61,14 +59,10 @@ def _human_bytes(n: Optional[int]) -> str:
     while x >= 1024 and i < len(suffixes) - 1:
         x /= 1024.0
         i += 1
-    # Use float formatting to ensure a space and consistent precision
     return f"{x:.1f} {suffixes[i]}"
 
-
-# In the Helper Functions section, replace the existing _render_progress_line function with this:
-
 def _render_progress_line(
-    filename: str, # <-- NEW PARAMETER
+    filename: str,
     status: str,
     nice: Optional[str],
     bytes_done: Optional[int],
@@ -82,45 +76,37 @@ def _render_progress_line(
     """Renders a single, clean progress line, including the filename and excluding 1/1 file count."""
     parts: list[str] = []
 
-    # 0. Filename (Truncated if necessary)
     max_len = 30
     if len(filename) > max_len:
         filename_display = "..." + filename[-(max_len - 3):]
     else:
         filename_display = filename
 
-    parts.append(f"{filename_display:<{max_len}}") # Left-aligned
+    parts.append(f"{filename_display:<{max_len}}")
 
-    # 1. Spinner / Status Icon
     if status not in ("SUCCEEDED", "FAILED", "CANCELED"):
         parts.append(SPINNER[spin_idx % len(SPINNER)])
     else:
         parts.append("✓" if status == "SUCCEEDED" else "×")
 
-    # 2. Status
     parts.append(f"| {status}")
     if nice:
         parts.append(f"({nice})")
 
-    # 3. File/Byte Counts (robust against None)
     bytes_done = bytes_done if bytes_done is not None else 0
     bytes_total = bytes_total if bytes_total is not None else 0
     files_done = files_done if files_done is not None else 0
     files_total = files_total if files_total is not None else 0
 
-    # *** MODIFIED LOGIC: Only display file count if files_total > 1 ***
     if files_total > 1:
         parts.append(f"files {files_done}/{files_total}")
-    # ***************************************************************
 
-    # 4. Progress Percentage & Sizes
     if bytes_total > 0:
         pct = (bytes_done / bytes_total) * 100.0
         parts.append(f"{_human_bytes(bytes_done)}/{_human_bytes(bytes_total)} {pct:5.1f}%")
     elif bytes_done > 0:
         parts.append(_human_bytes(bytes_done))
 
-    # 5. Rate and ETA
     if rate_bps and rate_bps > 0:
         parts.append(f"[{_human_bytes(int(rate_bps))}/s]")
 
@@ -262,8 +248,8 @@ def _get_transfer_client(cfg: dict) -> g.TransferClient:
 
     ac.oauth2_start_flow(
         requested_scopes=[
-            str(TransferScopes.all),  # transfer
-            "openid",                 # OIDC userinfo
+            str(TransferScopes.all),
+            "openid",
             "profile",
             "email",
         ],
@@ -274,14 +260,11 @@ def _get_transfer_client(cfg: dict) -> g.TransferClient:
     auth_code = input("Auth code: ").strip()
 
     tokens = ac.oauth2_exchange_code_for_tokens(auth_code)
-
-    # Tokens for each resource server
     rs_map = tokens.by_resource_server
 
     transfer_rs = rs_map["transfer.api.globus.org"]
     auth_rs = rs_map.get("auth.globus.org")
 
-    # Save transfer refresh token
     cfg[K_REFRESH_TOKEN] = transfer_rs["refresh_token"]
 
     if auth_rs is not None and auth_rs.get("refresh_token"):
@@ -308,7 +291,6 @@ def _get_transfer_client(cfg: dict) -> g.TransferClient:
 
     _save_globus_config(cfg)
 
-    # Build TransferClient authorizer using the transfer refresh token
     authorizer = g.RefreshTokenAuthorizer(
         cfg[K_REFRESH_TOKEN],
         ac,
@@ -346,10 +328,8 @@ def _get_ingest_bearer_token(cfg: dict) -> str:
             "Run `morphic-util globus-login` to (re)authorise with Globus."
         )
 
-    # Same client as _get_transfer_client uses
     ac = g.NativeAppAuthClient(native_client_id)
 
-    # This gives us fresh tokens for auth.globus.org
     tokens = ac.oauth2_refresh_token(auth_rt)
     rs_map = tokens.by_resource_server
 
@@ -416,15 +396,12 @@ class GlobusStorage(Storage):
             """
             print(f"[GlobusStorage] AREA {area} — {op}")
 
-    # ---------- properties ----------
-
     @property
     def tc(self) -> g.TransferClient:
         if self._tc is None:
             self._tc = _get_transfer_client(self.cfg)
 
         if not self._activated:
-            # Activation logic runs silently
             try:
                 self._tc.endpoint_autoactivate(self.src_endpoint, if_expires_in=3600)
                 self._tc.endpoint_autoactivate(self.dst_endpoint, if_expires_in=3600)
@@ -458,8 +435,6 @@ class GlobusStorage(Storage):
         if subdir:
             base = _join_path(base, subdir)
         return _norm_dir(base)
-
-    # ---------- Storage interface ----------
 
     def area_exists(self, area: str) -> bool:
         """
@@ -526,7 +501,6 @@ class GlobusStorage(Storage):
             """
             Upload a single file via Globus, showing its index relative to the total batch.
             """
-#             print(f"[{file_index}/{total_files}] Submitting {os.path.basename(local_path)}...")
 
             self._print_area_context(
                f"uploading [{file_index}/{total_files}] -> {dest_name}",
@@ -545,12 +519,8 @@ class GlobusStorage(Storage):
             file_basename = os.path.basename(local_path)
 
             if subdir_supported:
-                # area_dir will be something like:
-                #   /ebi/ftp/private/morphic-transfer/submissions/<datasetId>
                 dest_path = _join_path(area_dir, dest_name)
             else:
-                # Fallback: still under api_area_root, but with dataset prefix in filename
-                # e.g. /ebi/ftp/private/morphic-transfer/submissions/691f...__non_empty_test_v2.txt
                 dest_path = _join_path(api_area_root, f"{area}__{basename(dest_name)}")
 
             tdata = g.TransferData(
@@ -565,7 +535,6 @@ class GlobusStorage(Storage):
             res = tc.submit_transfer(tdata)
             task_id = res["task_id"]
 
-            # ---- Progress loop ----
             start_t = time.time()
             last_bytes: Optional[int] = 0
             last_t = start_t
@@ -609,7 +578,6 @@ class GlobusStorage(Storage):
                         spin_idx=spin,
                     )
 
-                    # Output logic (clean, single line update)
                     sys.stdout.write("\r" + line.ljust(100))
                     sys.stdout.flush()
 
@@ -618,7 +586,6 @@ class GlobusStorage(Storage):
                     spin += 1
 
                     if status in ("SUCCEEDED", "FAILED", "CANCELED"):
-                        # Final clean line after task completion
                         sys.stdout.write("\r" + line.ljust(100) + "\n")
                         sys.stdout.flush()
 
@@ -643,7 +610,6 @@ class GlobusStorage(Storage):
         This expects a JSON list of {name, type, size} dicts,
         as returned by /datasets/{id}/globus/files.
         """
-        # Force construction of TransferClient (and silent endpoint autoactivation)
         self.tc
 
         self._print_area_context(f"listing files (prefix='{prefix}')", area)
@@ -701,7 +667,6 @@ class GlobusStorage(Storage):
         else:
             self._print_area_context(f"deleting paths: {paths}", area)
 
-        # 1. Build the DeleteRequest payload, matching the FastAPI model
         payload = {
             "paths": paths,
             "all_contents": all_contents,
@@ -709,10 +674,7 @@ class GlobusStorage(Storage):
             "recursive": True,
         }
 
-        # 2. Construct the URL path using the correct /datasets/ prefix
         api_path = f"/datasets/{area}/delete"
-
-        # 3. Call the Provider API (using the existing _api_call helper)
         try:
             res = _api_call(
                 self.cfg,
@@ -723,13 +685,10 @@ class GlobusStorage(Storage):
             task_id = res.get("delete_task_id")
             targets = res.get("targets")
 
-            # Check if targets is a list of strings or an integer count
             target_summary = str(len(targets)) if isinstance(targets, list) else str(targets)
 
             print(f"Deletion task submitted successfully.")
-#             print(f"Globus Task ID: {task_id}")
             print(f"Targets deleted: {target_summary}")
 
         except RuntimeError as e:
-            # Re-raise the error so the CLI wrapper can report it
             raise RuntimeError(f"API Deletion failed for dataset {area}: {e}")

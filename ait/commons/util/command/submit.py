@@ -1165,8 +1165,12 @@ class CmdSubmit:
         Returns:
             tuple: A tuple containing a boolean indicating success and the ID of the created entity.
         """
-        if type in ['study', 'dataset', 'biomaterial', 'process', 'file']:
+        if type in ["study", "dataset", "biomaterial", "process", "file"]:
             data = transform(file) if file is not None else {}
+
+            # If user supplies a plain JSON object, wrap it.
+            if type in ["dataset", "study"] and isinstance(data, dict) and "content" not in data:
+                data = {"content": data}
 
             entity_id = self.create_new_envelope_and_submit_entity(type, data, access_token)
 

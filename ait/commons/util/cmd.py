@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sys
 from datetime import date
@@ -7,8 +8,8 @@ from pathlib import Path
 import requests
 
 from ait.commons.util.aws_client import Aws, static_bucket_name
-
 from ait.commons.util.command.config import CmdConfig
+from ait.commons.util.command.config_globus import CmdConfigGlobus
 from ait.commons.util.command.create import CmdCreate
 from ait.commons.util.command.delete import CmdDelete
 from ait.commons.util.command.download import CmdDownload
@@ -19,27 +20,22 @@ from ait.commons.util.command.submit_file import CmdSubmitFile
 from ait.commons.util.command.sync import CmdSync
 from ait.commons.util.command.upload import CmdUpload
 from ait.commons.util.command.view import CmdView
-from ait.commons.util.local_state import get_bucket, set_attr, get_attr
+from ait.commons.util.local_state import get_bucket, get_attr, set_attr
 from ait.commons.util.settings import NAME, VERSION
-from ait.commons.util.user_profile import profile_exists, get_profile
-from ait.commons.util.command.config_globus import CmdConfigGlobus
-
-# storage factory (returns AwsStorage or GlobusStorage based on env / config)
 from ait.commons.util.storage.factory import build_storage
-import logging
+from ait.commons.util.user_profile import get_profile, profile_exists
+
 
 def setup_logging(args):
-    level = logging.WARNING  # default: quiet
+    level = logging.WARNING
 
     if getattr(args, "debug", False):
         level = logging.DEBUG
     elif getattr(args, "verbose", False):
         level = logging.INFO
 
-    logging.basicConfig(
-        level=level,
-        format="%(levelname)s: %(message)s"
-    )
+    logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
+
 
 def _globus_config_present() -> bool:
     """
@@ -66,19 +62,34 @@ def _globus_config_present() -> bool:
     )
 
 
+def _select_backend() -> str:
+    """
+    Backend selection:
+      - If STORAGE_BACKEND is set => respect it (aws|globus)
+      - Else if ~/.morphic-util/config.json indicates Globus config => globus
+      - Else => aws
+    """
+    env_backend = os.getenv("STORAGE_BACKEND")
+    if env_backend:
+        return env_backend.strip().lower()
+    return "globus" if _globus_config_present() else "aws"
+
+
 class Cmd:
     """
     Runner (storage-agnostic).
 
-    - Auth: requires AWS Cognito (access token in the user profile), regardless of backend.
-    - Backend selection:
-        * If STORAGE_BACKEND is set => use it (aws|globus)
-        * Else if ~/.morphic-util/config.json indicates Globus config => globus
-        * Else => aws
+    Backend selection:
+      - If STORAGE_BACKEND is set => respect it (aws|globus)
+      - Else if ~/.morphic-util/config.json indicates Globus config => globus
+      - Else => aws
+
+    Important behavior change:
+      - In Globus mode, we do NOT require a local Cognito profile (no `morphic-util config` needed).
+      - In AWS mode, we DO require a Cognito profile for token + AWS credentials validation.
     """
 
     def __init__(self, args):
-
         # self.check_version()
         setup_logging(args)
 
@@ -98,44 +109,54 @@ class Cmd:
         # 3) These bypass storage/profile
         if args.command == "submit":
             success, msg = CmdSubmit(args).run()
-            print(msg)
+            if msg:
+                print(msg)
             return
 
         if args.command == "submit-file":
             success, msg = CmdSubmitFile(args).run()
-            print(msg)
+            if msg:
+                print(msg)
             return
 
         if args.command == "view":
             success, msg = CmdView(args).run()
-            print(msg)
+            if msg:
+                print(msg)
             return
 
-        # ---- from here on, we require a user profile + Cognito token ----
+        # -------- Backend selection (MUST be before profile checks) --------
+        backend = _select_backend()
 
-        if not profile_exists(args.profile):
-            print(f"Profile '{args.profile}' not found. Please run config command with your access keys")
+        if backend not in ("aws", "globus"):
+            print(f"Invalid STORAGE_BACKEND='{backend}'. Expected 'aws' or 'globus'.")
             sys.exit(1)
-
-        self.user_profile = get_profile(args.profile)
-
-        access_token = getattr(self.user_profile, "access_token", None)
-        if not access_token:
-            print("Not authenticated. Run: morphic-util config <username> <password>")
-            sys.exit(1)
-
-        # -------- Backend selection --------
-        env_backend = os.getenv("STORAGE_BACKEND")
-        if env_backend:
-            backend = env_backend.lower()
-        else:
-            backend = "globus" if _globus_config_present() else "aws"
 
         print(f"[morphic-util] storage backend: {backend}")
 
-        if backend == "aws":
-            self.aws = Aws(self.user_profile)
+        if backend == "globus":
+            # Globus mode: do NOT require a Cognito profile.
+            # build_storage should ignore user_profile (or accept None) in globus mode.
+            self.user_profile = None
+            self.storage = build_storage(None, backend="globus")
 
+        else:
+            # AWS mode: require a user profile + Cognito token + AWS credentials + bucket bootstrap.
+            if not profile_exists(args.profile):
+                print(
+                    f"Profile '{args.profile}' not found. "
+                    f"Run: morphic-util config <username> <password>"
+                )
+                sys.exit(1)
+
+            self.user_profile = get_profile(args.profile)
+
+            access_token = getattr(self.user_profile, "access_token", None)
+            if not access_token:
+                print("Not authenticated. Run: morphic-util config <username> <password>")
+                sys.exit(1)
+
+            self.aws = Aws(self.user_profile)
             if not self.aws.is_valid_credentials():
                 print("Invalid credentials")
                 sys.exit(1)
@@ -150,16 +171,7 @@ class Cmd:
                     print("Unable to get bucket")
                     sys.exit(1)
 
-            # IMPORTANT: pass backend explicitly so factory cannot disagree
-            self.storage = build_storage(self.user_profile, backend=backend)
-
-        elif backend == "globus":
-            # IMPORTANT: pass backend explicitly so factory cannot disagree
-            self.storage = build_storage(self.user_profile, backend=backend)
-
-        else:
-            print(f"Invalid STORAGE_BACKEND='{backend}'. Expected 'aws' or 'globus'.")
-            sys.exit(1)
+            self.storage = build_storage(self.user_profile, backend="aws")
 
         self.execute(args)
 
@@ -171,7 +183,10 @@ class Cmd:
             resp = requests.get(f"https://pypi.org/pypi/{NAME}/json")
             latest_version = resp.json()["info"]["version"]
             if VERSION < latest_version:
-                print(f"INFO: A new version of {NAME} is available. Run `pip install {NAME} --upgrade` to upgrade.")
+                print(
+                    f"INFO: A new version of {NAME} is available. "
+                    f"Run `pip install {NAME} --upgrade` to upgrade."
+                )
             set_attr("version_checked", today)
 
     def execute(self, args):

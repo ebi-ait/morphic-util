@@ -41,6 +41,8 @@ K_DEST_ROOT = "dest_root"
 K_SRC_UUID = "src_collection_uuid"
 K_API_URL = "api_url"
 K_API_KEY = "api_key"
+K_STORAGE_BACKEND = "storage_backend"
+
 
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -141,6 +143,7 @@ def _load_globus_config() -> dict:
     cfg: dict = {}
 
     defaults = {
+        K_STORAGE_BACKEND: "globus",
         K_NATIVE_CLIENT_ID: os.getenv("MORPHIC_NATIVE_CLIENT_ID", "ada49ae3-31b3-4d2c-9f25-893876ef3952"),
         K_EBI_UUID: os.getenv("MORPHIC_EBI_COLLECTION_UUID", "56c5c4f0-601a-4555-9aca-70f8cacaac0f"),
         K_DEST_ROOT: os.getenv("MORPHIC_DEST_ROOT", "/"),
@@ -149,6 +152,7 @@ def _load_globus_config() -> dict:
     }
 
     env_map = {
+        K_STORAGE_BACKEND: "STORAGE_BACKEND",
         K_NATIVE_CLIENT_ID: "MORPHIC_NATIVE_CLIENT_ID",
         K_REFRESH_TOKEN: "MORPHIC_REFRESH_TOKEN",
         K_EBI_UUID: "MORPHIC_EBI_COLLECTION_UUID",

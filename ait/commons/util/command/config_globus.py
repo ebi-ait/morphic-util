@@ -43,6 +43,7 @@ class CmdConfigGlobus:
             if getattr(self.args, "api_key", None):
                 cfg[K_API_KEY] = self.args.api_key
 
+            cfg["storage_backend"] = "globus"
             _save_globus_config(cfg)
 
             # 2) Trigger Globus Native App auth if refresh_token is missing

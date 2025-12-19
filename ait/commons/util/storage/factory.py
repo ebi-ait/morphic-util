@@ -19,7 +19,14 @@ def build_storage(user_profile: Optional[UserProfile] = None, backend: Optional[
       2) STORAGE_BACKEND env var
       3) default 'aws'
     """
-    effective = (backend or os.getenv("STORAGE_BACKEND", "aws")).lower().strip()
+    cfg = _load_cfg()
+
+    effective = (
+        backend
+        or cfg.get("storage_backend")
+        or os.getenv("STORAGE_BACKEND")
+        or "aws"
+    ).lower().strip()
 
     if effective == "globus":
         from .globus_backend import GlobusStorage

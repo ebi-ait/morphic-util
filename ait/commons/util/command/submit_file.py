@@ -220,33 +220,38 @@ class CmdSubmitFile:
         self.args = args
         setup_logging(args)
 
-        self.backend = os.getenv("STORAGE_BACKEND", "aws").lower().strip()
-
         self.user_profile = None
         self.access_token = None
 
-        if self.backend == "globus":
-            # Globus mode: no Cognito profile required
+        self.storage = build_storage(None)
+
+        self.backend = getattr(self.storage, "__class__", type(self.storage)).__name__.lower()
+        is_globus = "globus" in self.backend
+        is_aws = "aws" in self.backend
+
+        if is_globus:
+            # Globus mode: Provider API calls should use Globus token
             try:
                 self.access_token = _get_ingest_bearer_token(_GLOBUS_CFG)
                 log.info("Using Globus access token for Provider API calls")
             except Exception as e:
-                # In Globus-only mode, treat this as fatal (otherwise you silently fall back to AWS/Cognito)
                 raise RuntimeError(
                     "Globus auth not available. Run `morphic-util globus-login` and ensure "
                     "~/.morphic-util/config.json contains auth_refresh_token."
                 ) from e
 
-            self.storage = build_storage(None, backend="globus")
-
-        elif self.backend == "aws":
-            # AWS mode: requires Cognito profile
+        elif is_aws:
+            # AWS mode: requires Cognito profile token (existing behavior)
             self.user_profile = get_profile("morphic-util")
             self.access_token = self.user_profile.access_token
-            self.storage = build_storage(self.user_profile, backend="aws")
+
+            # Rebuild storage using the profile (AWS backend needs it)
+            self.storage = build_storage(self.user_profile)
 
         else:
-            raise ValueError(f"Invalid STORAGE_BACKEND='{self.backend}'. Expected 'aws' or 'globus'.")
+            raise RuntimeError(
+                f"Unknown storage backend from storage instance: {type(self.storage)}"
+            )
 
         self.provider_api = ProviderApi(self.BASE_URL)
 
@@ -258,7 +263,10 @@ class CmdSubmitFile:
 
         self.context = getattr(args, "context", None)
 
-        self.action = self._get_required_arg("action", "Submission action (ADD, MODIFY or DELETE) is mandatory")
+        self.action = self._get_required_arg(
+            "action",
+            "Submission action (ADD, MODIFY or DELETE) is mandatory"
+        )
         self.dataset = self._get_required_arg(
             "dataset",
             (
@@ -274,7 +282,7 @@ class CmdSubmitFile:
             print(f"Dataset does not exist {self.dataset}")
             sys.exit(1)
 
-        if self.action != "DELETE":
+        if str(self.action).upper() != "DELETE":
             self.file = self._get_required_arg("file", "File is mandatory")
         else:
             self.file = None

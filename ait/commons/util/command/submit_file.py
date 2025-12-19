@@ -218,20 +218,36 @@ class CmdSubmitFile:
 
     def __init__(self, args):
         self.args = args
-
         setup_logging(args)
 
-        self.user_profile = get_profile("morphic-util")
+        self.backend = os.getenv("STORAGE_BACKEND", "aws").lower().strip()
 
-        # Prefer Globus access token for Provider API calls
-        try:
-            self.access_token = _get_ingest_bearer_token(_GLOBUS_CFG)
-            log.info("Using Globus access token for Provider API calls")
-        except Exception:
-            log.info("Globus auth not available; using profile access token")
+        self.user_profile = None
+        self.access_token = None
+
+        if self.backend == "globus":
+            # Globus mode: no Cognito profile required
+            try:
+                self.access_token = _get_ingest_bearer_token(_GLOBUS_CFG)
+                log.info("Using Globus access token for Provider API calls")
+            except Exception as e:
+                # In Globus-only mode, treat this as fatal (otherwise you silently fall back to AWS/Cognito)
+                raise RuntimeError(
+                    "Globus auth not available. Run `morphic-util globus-login` and ensure "
+                    "~/.morphic-util/config.json contains auth_refresh_token."
+                ) from e
+
+            self.storage = build_storage(None, backend="globus")
+
+        elif self.backend == "aws":
+            # AWS mode: requires Cognito profile
+            self.user_profile = get_profile("morphic-util")
             self.access_token = self.user_profile.access_token
+            self.storage = build_storage(self.user_profile, backend="aws")
 
-        self.storage = build_storage(self.user_profile)
+        else:
+            raise ValueError(f"Invalid STORAGE_BACKEND='{self.backend}'. Expected 'aws' or 'globus'.")
+
         self.provider_api = ProviderApi(self.BASE_URL)
 
         self.validation_errors: list[str] = []
@@ -252,12 +268,11 @@ class CmdSubmitFile:
             ),
         )
 
-        if self.dataset:
-            try:
-                self.provider_api.get(f"{self.BASE_URL}/datasets/{self.dataset}", self.access_token)
-            except Exception:
-                print(f"Dataset does not exist {self.dataset}")
-                sys.exit(1)
+        try:
+            self.provider_api.get(f"{self.BASE_URL}/datasets/{self.dataset}", self.access_token)
+        except Exception:
+            print(f"Dataset does not exist {self.dataset}")
+            sys.exit(1)
 
         if self.action != "DELETE":
             self.file = self._get_required_arg("file", "File is mandatory")

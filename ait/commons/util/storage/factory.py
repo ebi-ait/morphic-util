@@ -9,8 +9,20 @@ from ait.commons.util.user_profile import UserProfile
 from .base import Storage
 from .aws_backend import AwsStorage
 
+import json
+from pathlib import Path
+
+def _load_cfg() -> dict:
+    p = Path.home() / ".morphic-util" / "config.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text() or "{}")
+    except Exception:
+        return {}
 
 def build_storage(user_profile: Optional[UserProfile] = None, backend: Optional[str] = None) -> Storage:
+    cfg = _load_cfg()
     """
     Build a Storage backend instance.
 

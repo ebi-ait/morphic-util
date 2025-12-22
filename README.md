@@ -336,7 +336,7 @@ cd ~/morphic-test
 ```
 ```shell script
 python3 -m venv venv
-source venv/bin/activate
+source .venv/bin/activate
 ```
 
 Verify:

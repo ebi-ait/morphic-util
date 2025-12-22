@@ -43,12 +43,29 @@ K_API_URL = "api_url"
 K_API_KEY = "api_key"
 K_STORAGE_BACKEND = "storage_backend"
 
+_WIN_DRIVE_RE = re.compile(r"^([a-zA-Z]):[\\/](.*)$")
 
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 # --------------------------
 # Helper Functions
 # --------------------------
+
+def _to_globus_source_path(p: str) -> str:
+    """
+    Convert local paths into Globus endpoint paths.
+    Windows:
+      C:\\Users\\x\\file.txt -> /C/Users/x/file.txt
+    Others:
+      passthrough with forward slashes
+    """
+    p = (p or "").strip().strip('"')
+    m = _WIN_DRIVE_RE.match(p)
+    if m:
+        drive = m.group(1).upper()
+        rest = m.group(2).replace("\\", "/")
+        return f"/{drive}/{rest}"
+    return p.replace("\\", "/")
 
 def _human_bytes(n: Optional[int]) -> str:
     """Converts bytes to human-readable format (e.g., 1.2 KB)."""
@@ -534,7 +551,9 @@ class GlobusStorage(Storage):
                 verify_checksum=True,
                 notify_on_failed=True,
             )
-            tdata.add_item(local_path, dest_path)
+            src_path = _to_globus_source_path(local_path)
+            log.debug(f"Globus source path resolved to: {src_path}")
+            tdata.add_item(src_path, dest_path)
 
             res = tc.submit_transfer(tdata)
             task_id = res["task_id"]

@@ -14,6 +14,7 @@ import globus_sdk as g
 from globus_sdk.scopes import TransferScopes
 from globus_sdk import AccessTokenAuthorizer
 from os.path import basename
+import re
 
 import logging
 log = logging.getLogger("morphic-util")

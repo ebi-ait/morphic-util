@@ -372,63 +372,119 @@ Expected:
 * Version shown (e.g. 1.0.5)
 * Commands listed (e.g. config-globus, globus-login, create, select, upload, submit-file, etc.)
 ---
-## 1. Globus Setup (one time only)
 
-### 1.1 Identify your Globus source collection (where your files live)
+## 1. Globus Submission Flow – Source Collection Setup
 
-`morphic-util` needs to know **which Globus collection contains the files you want to upload**.
-This is referred to as the **source collection UUID**.
+This guide explains how to identify and configure your **Globus source collection**, which is required for uploading files to **MorPhiC private storage** using Globus.
 
-In most cases, this will be either:
-- An **institutional Globus endpoint**, or
-- **Globus Connect Personal (GCP)** pointing to a local directory on your machine
+The setup described here is **one-time only**.
 
 ---
 
-#### Option A — Use Globus Connect Personal (recommended for local files)
+### What is a “source collection”?
 
-If your data is on your **local machine** and you do not already have a Globus collection:
+A **source collection** is the Globus collection where your data already lives.
 
-1. Install **Globus Connect Personal (GCP)**:
-   👉 https://www.globus.org/globus-connect-personal
+This may be:
+- an **institutional HPC or shared server** (most common), or
+- a **local machine or personal VM** (via Globus Connect Personal).
 
-2. Start Globus Connect Personal.
+`morphic-util` requires the **collection UUID** so it can instruct Globus to transfer files from your location to the MorPhiC private storage.
 
-3. During setup, ensure GCP is configured to expose the **local directory that contains the data you want to upload**  
-   (for example, `~/data/`, `/mnt/storage/project_x/`, etc.).
+---
 
-   > ⚠️ Only directories explicitly exposed by GCP will be visible to Globus transfers.
+### Choose the correct setup path
 
-4. Once running, GCP will appear as a collection in the Globus web interface.
+#### Use **Option A** if:
+- your data lives on an HPC, shared server, or institutional storage
+- you have already transferred data using Globus in the past
+- you can already browse your data in the Globus web interface
 
+➡️ **No additional installation required**
 
-#### Retrieve the source collection UUID (via Globus Web UI)
+#### Use **Option B** if:
+- your data lives on your laptop or a personal VM
+- you do **not** already have a Globus collection
 
-1. Open the Globus web app:  
-   👉 https://app.globus.org
+➡️ **Requires Globus Connect Personal (GCP)**
 
-2. Log in with your institutional or ORCID-backed Globus account.
+---
 
+### Option A — Institutional Globus collection (GCS / HPC / server)
+
+This is the **recommended and most common** case for DPCs.
+
+If you have previously uploaded data from an HPC or institutional server using Globus, you already have a valid source collection.
+
+#### A1. Retrieve the source collection UUID (Web UI)
+
+1. Open the Globus web app: https://app.globus.org
+2. Log in using your institutional or ORCID-backed Globus account.
 3. Open **File Manager**.
-
-4. In the **Collection** selector (top left):
-  - Choose your institutional endpoint, **or**
-  - Select *Globus Connect Personal*.
-
+4. In the collection selector (top left):
+    - search for your institutional endpoint, or
+    - select a collection you have used before
 5. Click the **ⓘ (information)** icon next to the collection name.
-
 6. Copy the **Collection UUID**.
 
-This is your **source collection UUID**.
+#### A2. Retrieve the source collection UUID (CLI)
+
+```bash
+globus login
+globus whoami
+```
+
+#### Method 1 — From recent transfers
+
+```bash
+globus task list --limit 10
+globus task show <TASK_ID>
+```
+
+Look for **Source Endpoint ID**.
+
+#### Method 2 — Search by name
+
+```bash
+globus endpoint search "HPC"
+globus endpoint search "Institute"
+globus collection list <ENDPOINT_ID>
+```
 
 ---
 
+### Option B — Globus Connect Personal (GCP)
 
-#### Option B — Create / use a personal Globus endpoint
-```shell script
-globus endpoint search "$(hostname)"
+Use this option **only if your data is not already on an institutional Globus collection**.
+
+#### B1. Install and configure GCP
+
+1. Install Globus Connect Personal: https://www.globus.org/globus-connect-personal
+2. Start Globus Connect Personal.
+3. Expose the directory that contains your data (e.g. `~/data`, `/mnt/storage/project_x`).
+
+> ⚠️ Only directories explicitly exposed during setup will be accessible.
+
+#### B2. Retrieve the source collection UUID (CLI)
+
+```bash
 globus endpoint local-id
 ```
+
+Optional:
+
+```bash
+globus endpoint search "$(hostname)"
+```
+---
+
+### Summary
+
+| Where your data lives | Setup option | Installation required |
+|----------------------|--------------|------------------------|
+| Institutional HPC / shared server | Option A (GCS) | ❌ No |
+| Previously used Globus | Option A (GCS) | ❌ No |
+| Laptop / personal VM | Option B (GCP) | ✅ Yes |
 ---
 ## 2. Authentication & Configuration (Globus-only — Cognito no longer required)
 As of the new Globus integration, morphic-util no longer uses or requires AWS Cognito.

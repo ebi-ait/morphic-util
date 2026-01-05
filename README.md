@@ -352,11 +352,17 @@ pip -V
 
 You should now be inside a clean virtual environment.
 
-### Install morphic-util (TestPyPI)
+### Install morphic-util
 
-Install the Globus-enabled test release from TestPyPI:
-
+#### Option A — Install from GitHub branch (current reality) 
+This is how internal users should install today:
+```shell script
+pip install git+https://github.com/ebi-ait/morphic-util.git@feature/globus-api-integration
 ```
+
+#### Option B — Install the Globus-enabled test release from TestPyPI:
+
+```shell script
 pip install -U --pre \
 --index-url https://test.pypi.org/simple/ \
 --extra-index-url https://pypi.org/simple \

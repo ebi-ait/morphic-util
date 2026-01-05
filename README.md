@@ -381,7 +381,7 @@ morphic-util --help
 ```
 Expected:
 * No traceback
-* Version shown: 1.1.0rc1
+* Version shown: 1.0.5
 * Commands include:
 `config-globus, globus-login, submit, submit-file, create, select, upload, list, delete, sync, …---`
 

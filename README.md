@@ -301,16 +301,21 @@ Run tests
 nosetests
 ```
 
-# Globus Submission Flow (New Storage Backend)
+# Globus Submission Flow (Test release)
 
 morphic-util now supports submitting datasets and uploading files directly to EMBL-EBI on-prem private storage via Globus.
-This section describes the end-to-end user journey.
+This section describes the end-to-end user journey for the Globus-enabled test release.
+
+* Expected version for testers: `morphic-util 1.1.0rc1`
+* This version is distributed via TestPyPI for initial DPC testing.
 
 ## Testing morphic-util (Globus-enabled branch)
 
-This guide is for colleagues who want to test the current Globus-enabled version of morphic-util from the development branch.
+This guide is for DPC users and collaborators testing the current Globus-enabled version of morphic-util.
 
-It assumes no prior local setup and recommends using a clean Python environment.
+It assumes:
+* no prior local setup, and
+* use of a clean Python environment (strongly recommended).
 
 ### Prerequisites
 
@@ -347,31 +352,32 @@ pip -V
 
 You should now be inside a clean virtual environment.
 
-### Install morphic-util
-#### Option A — Install from GitHub branch (current reality)
+### Install morphic-util (TestPyPI)
 
-This is how internal users should install today:
-```shell script
-pip install git+https://github.com/ebi-ait/morphic-util.git@feature/globus-api-integration
+Install the Globus-enabled test release from TestPyPI:
+
+```
+pip install -U --pre \
+--index-url https://test.pypi.org/simple/ \
+--extra-index-url https://pypi.org/simple \
+morphic-util
 ```
 
-#### Option B — Install from PyPI (future)
-Once released:
-```shell script
-pip install morphic-util
+If you previously installed an older version, uninstall it first:
+```
+pip uninstall -y morphic-util
 ```
 
 #### Verify installation
 ```shell script
-morphic-util --help
 morphic-util --version
+morphic-util --help
 ```
-
 Expected:
 * No traceback
-* Version shown (e.g. 1.0.5)
-* Commands listed (e.g. config-globus, globus-login, create, select, upload, submit-file, etc.)
----
+* Version shown: 1.1.0rc1
+* Commands include:
+`config-globus, globus-login, submit, submit-file, create, select, upload, list, delete, sync, …---`
 
 ## 1. Globus Submission Flow – Source Collection Setup
 

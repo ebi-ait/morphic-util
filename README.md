@@ -621,11 +621,39 @@ morphic-util submit-file \
   --action ADD \
   --dataset <DATASET_ID>
 ```
-This registers biomaterials, protocols, library preps, and sequencing files.
+This command performs metadata validation, cross-file validation, and (if successful) ingests the submission into the MorPhiC database, by registering biomaterials, protocols, library preps, and sequencing files.
 
 Notes:
 - `metadata.xlsx` is the spreadsheet containing the dataset metadata.
 - An example spreadsheet for testing purposes is available [here](https://docs.google.com/spreadsheets/d/1zoRYWwzqoh2Qa17P_tb227rsbZbh267k/edit?gid=45802078#gid=45802078)
+
+### 5.1 What happens during submission
+
+The submission process consists of the following steps:
+
+#### 1.  Metadata content validation
+The metadata spreadsheet is first validated for internal consistency and completeness, including:
+
+* required sheets and columns
+* valid entity relationships (e.g. biomaterials → library preparations → sequencing files)
+* correct identifiers and references between entities
+
+#### 2. Cross-file validation (metadata ↔ uploaded files)
+
+The tool then verifies that files referenced in the spreadsheet are present in the dataset’s upload area on the Globus private storage.
+
+This includes checks for:
+* sequencing files listed in the spreadsheet but missing from storage
+* uploaded files that are not referenced in the metadata
+
+#### 3. Successful validation and ingestion
+If all validation steps succeed:
+
+* the metadata is ingested into the MorPhiC database
+* the submitted metadata.xlsx is copied into the dataset upload area
+* a submission results spreadsheet (e.g. validation summary) is generated and uploaded alongside it
+
+The dataset is then ready for downstream processing.
 
 ## 6. Globus-backed delete
 The delete command can use the Provider API + Globus backend for asynchronous deletion of files from the dataset’s upload area.

@@ -360,20 +360,6 @@ This is how internal users should install today:
 pip install git+https://github.com/ebi-ait/morphic-util.git@feature/globus-api-integration
 ```
 
-#### Option B — Install the Globus-enabled test release from TestPyPI:
-
-```shell script
-pip install -U --pre \
---index-url https://test.pypi.org/simple/ \
---extra-index-url https://pypi.org/simple \
-morphic-util
-```
-
-If you previously installed an older version, uninstall it first:
-```
-pip uninstall -y morphic-util
-```
-
 #### Verify installation
 ```shell script
 morphic-util --version

@@ -306,7 +306,7 @@ nosetests
 morphic-util now supports submitting datasets and uploading files directly to EMBL-EBI on-prem private storage via Globus.
 This section describes the end-to-end user journey for the Globus-enabled test release.
 
-* Expected version for testers: `morphic-util 1.1.0rc1`
+* Expected version for testers: `morphic-util 1.0.5`
 * This version is distributed via TestPyPI for initial DPC testing.
 
 ## Testing morphic-util (Globus-enabled branch)
@@ -531,6 +531,15 @@ To create datasets and upload files, your account must be upgraded to a **Contri
 ➡️ If you encounter a **403 Forbidden** error when creating a dataset, please contact the MorPhiC team (e.g. **alexkoci@ebi.ac.uk**) to have your role upgraded.
 
 ### 3.1 Create a Study (optional but recommended)
+
+```shell script
+positional arguments:
+$ morphic-util submit --type study --file <PATH_TO_STUDY_METADATA_FILE>
+
+  --type         type of metadata being submitted (here it is study)
+  --file         path to the file containing the metadata
+```
+
 ```shell script
 morphic-util submit --type study --file study.json
 ```
@@ -546,6 +555,20 @@ Example `study.json` (can be minimal):
 ℹ️ You can create datasets without a study and link them later.
 
 ### 3.2 Create a Dataset & Upload Area (with optional Study linking)
+```shell script
+positional arguments:
+$ morphic-util submit --type dataset --file <PATH_TO_DATASET_METADATA_FILE> [--study <STUDY_ID>] [--dataset-type <TYPE>] [--derived-from <PARENT_IDS>]
+  --type         type of metadata being submitted (here it is dataset)
+  --file         path to the file containing the metadata (optional)
+  --study        STUDY_ID obtained in the last step
+  --dataset-type: One of raw, filtered, processed, or analysis (required)
+  --derived-from: Comma-separated list of dataset IDs this dataset is derived from (required for all except raw)
+
+  Validation rules:
+    raw: Must not have --derived-from
+    filtered or processed: Must be derived from raw
+    analysis: Must be derived from one or more processed datasets
+```
 
 If you already have a Study ID, you can link the dataset at creation time:
 ```shell script

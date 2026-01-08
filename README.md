@@ -540,10 +540,11 @@ $ morphic-util submit --type study --file <PATH_TO_STUDY_METADATA_FILE>
   --file         path to the file containing the metadata
 ```
 
+Example with `study.json` (can be minimal):
 ```shell script
 morphic-util submit --type study --file study.json
 ```
-Example `study.json` (can be minimal):
+
 ```shell script
 {
     "title": "Sample Study",
@@ -570,6 +571,7 @@ $ morphic-util submit --type dataset --file <PATH_TO_DATASET_METADATA_FILE> [--s
     analysis: Must be derived from one or more processed datasets
 ```
 
+Example with `dataset.json`:
 If you already have a Study ID, you can link the dataset at creation time:
 ```shell script
 morphic-util submit \
@@ -580,7 +582,6 @@ morphic-util submit \
 ```
 - The dataset ID is also the upload area name
 
-Example `dataset.json`:
 ```json
 {
   "title": "Sample Processed Dataset",

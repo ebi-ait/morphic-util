@@ -765,7 +765,7 @@ class SpreadsheetSubmitter:
         return [sheet_name.strip() for sheet_name in xls.sheet_names]
 
     def input_file_to_data_frames(self, sheet_name, action):
-        if action.upper() == 'MODIFY':
+        if action and action.upper() == 'MODIFY':
             skip_rows = 0
         else:
             skip_rows = 3

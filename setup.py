@@ -53,6 +53,16 @@ setup(
     packages=['ait.commons.util', 'ait.commons.util.settings', 'ait.commons.util.command'],
     include_package_data=True,
     install_requires=ALL_REQS,
+    extras_require={
+        # `pip install morphic-util[service]` brings in the FastAPI HTTP /validate
+        # service deps. Kept separate from the CLI install so the published PyPI
+        # package stays lean.
+        'service': [
+            'fastapi',
+            'uvicorn[standard]',
+            'python-multipart',
+        ],
+    },
     entry_points={
         'console_scripts': [
             f'{NAME}=ait.commons.util.__main__:main',

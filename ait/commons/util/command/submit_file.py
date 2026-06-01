@@ -14,6 +14,7 @@ from ait.commons.util.provider_api_util import ProviderApi
 from ait.commons.util.spreadsheet_util import SpreadsheetSubmitter, ValidationError, \
     merge_library_preparation_sequencing_file, merge_cell_line_and_differentiated_cell_line, \
     merge_differentiated_cell_line_and_library_preparation, SubmissionError, process_library_preparations
+from ait.commons.util.spreadsheet_validate import SpreadsheetValidator
 
 
 # Define a class for handling submission of a command file
@@ -321,132 +322,16 @@ class CmdSubmitFile:
         return created_expression_alterations
 
     def _parse_spreadsheet(self, parser):
+        """Delegate to the shared SpreadsheetValidator so the CLI and the
+        HTTP /validate service share one parsing path. self.validation_errors
+        is mutated in place to preserve existing CLI behavior."""
         try:
-            # Determine the necessary sheet names
-            tab_names = parser.list_sheets()
-
-            cell_line_sheet_name = next(
-                (name for name in ["Cell line", "Clonal cell line"] if name in tab_names), None
+            return SpreadsheetValidator._parse_spreadsheet(
+                parser,
+                action=self.action,
+                context=self.context,
+                validation_errors=self.validation_errors,
             )
-
-            differentiated_cell_line_sheet_name = next(
-                (name for name in ["Differentiated cell line", "Differentiated product"] if name in tab_names), None
-            )
-
-            undifferentiated_cell_line_sheet_name = (
-                "Undifferentiated product" if "Undifferentiated product" in tab_names else None
-            )
-
-            undifferentiated_cell_lines = []
-            undifferentiated_cell_lines_df = None
-
-            differentiated_cell_lines = []
-            differentiated_cell_lines_df = None
-
-            differentiated = False
-
-            # Validate the presence of required sheets
-            if not cell_line_sheet_name:
-                self.validation_errors.append("Spreadsheet must contain a "
-                                              "'Cell line' or 'Clonal cell line' sheet.")
-
-            if not (differentiated_cell_line_sheet_name or undifferentiated_cell_line_sheet_name):
-                self.validation_errors.append(
-                    "Spreadsheet must contain a "
-                    "'Differentiated cell line', 'Undifferentiated product', "
-                    "or 'Differentiated product' sheet."
-                )
-
-            # Parse different sections of the spreadsheet
-            expression_alterations, expression_alterations_df = parser.get_expression_alterations(
-                'Expression alteration', self.action, self.validation_errors,
-                context=self.context
-            )
-
-            cell_lines, cell_lines_df, parent_cell_line_names = parser.get_cell_lines(
-                cell_line_sheet_name, self.action, self.validation_errors, context=self.context
-            )
-
-            if differentiated_cell_line_sheet_name:
-                differentiated_cell_lines, differentiated_cell_lines_df = parser.get_differentiated_cell_lines(
-                    differentiated_cell_line_sheet_name, self.action, self.validation_errors
-                )
-
-            if undifferentiated_cell_line_sheet_name:
-                undifferentiated_cell_lines, undifferentiated_cell_lines_df = parser.get_undifferentiated_cell_lines(
-                    undifferentiated_cell_line_sheet_name, self.action, self.validation_errors
-                )
-
-            # Check for errors and merge data
-            if differentiated_cell_lines and undifferentiated_cell_lines:
-                self.validation_errors.append(
-                    "A spreadsheet cannot contain rows in both differentiated and undifferentiated cell lines/ products"
-                )
-
-            if differentiated_cell_lines:
-                differentiated = True
-                merge_cell_line_and_differentiated_cell_line(cell_lines, differentiated_cell_lines,
-                                                             self.validation_errors, context=self.context)
-
-            if undifferentiated_cell_lines and not differentiated:
-                merge_cell_line_and_differentiated_cell_line(cell_lines, undifferentiated_cell_lines,
-                                                             self.validation_errors, context=self.context)
-
-            library_preparations_result = parser.get_library_preparations(
-                'Library preparation', differentiated, self.action, self.validation_errors)
-
-            if not isinstance(library_preparations_result, tuple) or len(library_preparations_result) != 2:
-                raise ValueError("Unexpected return from get_library_preparations()")
-
-            library_preparations, library_preparations_df = library_preparations_result
-
-            # Handle N:1 relationships for differentiated products in library preparation
-            for lp in library_preparations:
-                if "differentiated_biomaterial_id" in lp.__dict__:
-                    differentiated_ids = lp.differentiated_biomaterial_id.split("|")
-                    lp.differentiated_biomaterial_id = differentiated_ids
-
-            if differentiated_cell_lines:
-                if self.context == "unperturbed_multiple":
-                    # Use the new processing that creates a LP process and links the clone and differentiated product
-                    process_library_preparations(cell_lines, differentiated_cell_lines, library_preparations, self.validation_errors)
-                else:
-                    # Use the original merge function for differentiated cell lines (for MSK, JAX, etc.)
-                    merge_differentiated_cell_line_and_library_preparation(differentiated_cell_lines,
-                                                                           library_preparations, self.validation_errors, cell_lines=cell_lines)
-            elif undifferentiated_cell_lines and not differentiated:
-                if self.context == "unperturbed_multiple":
-                    process_library_preparations(cell_lines, undifferentiated_cell_lines, library_preparations, self.validation_errors)
-                else:
-                    merge_differentiated_cell_line_and_library_preparation(undifferentiated_cell_lines,
-                                                                           library_preparations, self.validation_errors, cell_lines=cell_lines)
-
-            sequencing_files, sequencing_files_df = parser.get_sequencing_files(
-                'Sequence file', self.action, self.validation_errors
-            )
-
-            merge_library_preparation_sequencing_file(library_preparations, sequencing_files, self.validation_errors)
-
-            # Return the parsed data as a dictionary
-            return {
-                "expression_alterations": expression_alterations,
-                "expression_alterations_df": expression_alterations_df,
-                "cell_lines": cell_lines,
-                "cell_lines_df": cell_lines_df,
-                "parent_cell_line_names": parent_cell_line_names,
-                "differentiated_cell_lines": differentiated_cell_lines,
-                "differentiated_cell_lines_df": differentiated_cell_lines_df,
-                "undifferentiated_cell_lines": undifferentiated_cell_lines,
-                "undifferentiated_cell_lines_df": undifferentiated_cell_lines_df,
-                "library_preparations": library_preparations,
-                "library_preparations_df": library_preparations_df,
-                "sequencing_files": sequencing_files,
-                "sequencing_files_df": sequencing_files_df,
-                "differentiated": differentiated,
-                "cell_line_sheet_name": cell_line_sheet_name,
-                "differentiated_cell_line_sheet_name": differentiated_cell_line_sheet_name,
-                "undifferentiated_cell_line_sheet_name": undifferentiated_cell_line_sheet_name
-            }
         except Exception as e:
             print(f"Exception occurred:", e)
 
